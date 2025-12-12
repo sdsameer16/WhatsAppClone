@@ -1,0 +1,479 @@
+import React, { useState, useEffect, useRef } from "react";
+import { io } from "socket.io-client";
+import axios from "axios";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+
+const API_URL = "http://localhost:5000";
+let socket = null;
+
+const StudentChat = () => {
+  const [currentView, setCurrentView] = useState("login"); // login, register, chat
+  const [studentId, setStudentId] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [branch, setBranch] = useState("");
+  const [startYear, setStartYear] = useState("");
+  const [endYear, setEndYear] = useState("");
+  const [student, setStudent] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    // Check if student is already logged in (token in localStorage)
+    const token = localStorage.getItem("studentToken");
+    const savedStudent = localStorage.getItem("student");
+    
+    if (token && savedStudent) {
+      setStudent(JSON.parse(savedStudent));
+      setCurrentView("chat");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (student && currentView === "chat") {
+      // Initialize socket connection
+      socket = io(API_URL);
+
+      // Register student
+      socket.emit("registerStudent", { studentId: student.studentId });
+
+      // Load message history
+      loadMessages();
+
+      // Listen for new messages
+      socket.on("receiveMessage", (data) => {
+        const newMsg = {
+          messageId: data.messageId,
+          sender: "admin",
+          senderName: data.senderName,
+          message: data.message,
+          timestamp: data.timestamp,
+        };
+        setMessages((prev) => [...prev, newMsg]);
+        toast.info(`New message from ${data.senderName}!`);
+        playNotification();
+
+        // Mark as delivered
+        socket.emit("markDelivered", {
+          messageId: data.messageId,
+          studentId: student.studentId,
+        });
+      });
+
+      return () => {
+        if (socket) {
+          socket.disconnect();
+        }
+      };
+    }
+  }, [student, currentView]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const loadMessages = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/messages/${student.studentId}`);
+      setMessages(response.data);
+
+      // Mark all messages as delivered
+      response.data.forEach(msg => {
+        if (socket && msg.messageId) {
+          socket.emit("markDelivered", {
+            messageId: msg.messageId,
+            studentId: student.studentId,
+          });
+        }
+      });
+    } catch (error) {
+      console.error("Error loading messages:", error);
+    }
+  };
+
+  const playNotification = () => {
+    try {
+      new Audio("/notification.mp3").play().catch(err => {
+        console.log("Audio play prevented:", err);
+      });
+    } catch (error) {
+      console.log("Audio error:", error);
+    }
+  };
+
+  const handleLogin = async () => {
+    if (!studentId.trim() || !password.trim()) {
+      toast.error("Please enter Student ID and password");
+      return;
+    }
+
+    try {
+      const response = await axios.post(`${API_URL}/api/student/login`, {
+        studentId,
+        password,
+      });
+
+      if (response.data.success) {
+        localStorage.setItem("studentToken", response.data.token);
+        localStorage.setItem("student", JSON.stringify(response.data.student));
+        setStudent(response.data.student);
+        setCurrentView("chat");
+        toast.success("Login successful!");
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.error || "Login failed");
+    }
+  };
+
+  const handleRegister = async () => {
+    if (!studentId.trim() || !name.trim() || !password.trim() || !branch.trim() || !startYear || !endYear) {
+      toast.error("Please fill all fields");
+      return;
+    }
+
+    if (parseInt(startYear) >= parseInt(endYear)) {
+      toast.error("End year must be after start year");
+      return;
+    }
+
+    try {
+      const response = await axios.post(`${API_URL}/api/student/register`, {
+        studentId,
+        name,
+        password,
+        branch,
+        startYear: parseInt(startYear),
+        endYear: parseInt(endYear),
+      });
+
+      if (response.data.success) {
+        localStorage.setItem("studentToken", response.data.token);
+        localStorage.setItem("student", JSON.stringify(response.data.student));
+        setStudent(response.data.student);
+        setCurrentView("chat");
+        toast.success("Registration successful!");
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.error || "Registration failed");
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("studentToken");
+    localStorage.removeItem("student");
+    setStudent(null);
+    setCurrentView("login");
+    if (socket) {
+      socket.disconnect();
+    }
+    toast.info("Logged out successfully");
+  };
+
+  // ==================== LOGIN VIEW ====================
+  if (currentView === "login") {
+    return (
+      <div style={styles.container}>
+        <div style={styles.formCard}>
+          <h2 style={styles.title}>🎓 Student Login</h2>
+          <p style={styles.subtitle}>College Batch Messaging System</p>
+
+          <input
+            type="text"
+            value={studentId}
+            onChange={(e) => setStudentId(e.target.value)}
+            placeholder="Student ID"
+            style={styles.input}
+            onKeyPress={(e) => e.key === "Enter" && handleLogin()}
+          />
+
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            style={styles.input}
+            onKeyPress={(e) => e.key === "Enter" && handleLogin()}
+          />
+
+          <button onClick={handleLogin} style={styles.primaryButton}>
+            Login
+          </button>
+
+          <button
+            onClick={() => setCurrentView("register")}
+            style={styles.secondaryButton}
+          >
+            New Student? Register Here
+          </button>
+        </div>
+        <ToastContainer position="bottom-right" />
+      </div>
+    );
+  }
+
+  // ==================== REGISTER VIEW ====================
+  if (currentView === "register") {
+    return (
+      <div style={styles.container}>
+        <div style={styles.formCard}>
+          <h2 style={styles.title}>📝 Student Registration</h2>
+
+          <input
+            type="text"
+            value={studentId}
+            onChange={(e) => setStudentId(e.target.value)}
+            placeholder="Student ID"
+            style={styles.input}
+          />
+
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Full Name"
+            style={styles.input}
+          />
+
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            style={styles.input}
+          />
+
+          <input
+            type="text"
+            value={branch}
+            onChange={(e) => setBranch(e.target.value.toUpperCase())}
+            placeholder="Branch (e.g., CSE, ECE, MECH)"
+            style={styles.input}
+          />
+
+          <div style={{ display: "flex", gap: "10px", width: "100%" }}>
+            <input
+              type="number"
+              value={startYear}
+              onChange={(e) => setStartYear(e.target.value)}
+              placeholder="Start Year (2023)"
+              style={{ ...styles.input, flex: 1 }}
+            />
+
+            <input
+              type="number"
+              value={endYear}
+              onChange={(e) => setEndYear(e.target.value)}
+              placeholder="End Year (2027)"
+              style={{ ...styles.input, flex: 1 }}
+            />
+          </div>
+
+          <button onClick={handleRegister} style={styles.primaryButton}>
+            Register
+          </button>
+
+          <button
+            onClick={() => setCurrentView("login")}
+            style={styles.secondaryButton}
+          >
+            Already have an account? Login
+          </button>
+        </div>
+        <ToastContainer position="bottom-right" />
+      </div>
+    );
+  }
+
+  // ==================== CHAT VIEW ====================
+  return (
+    <div style={styles.chatContainer}>
+      <div style={styles.chatHeader}>
+        <div>
+          <h3 style={styles.chatTitle}>📚 College Messages</h3>
+          <div style={styles.studentInfo}>
+            {student.name} • {student.studentId} • {student.branch} • Batch: {student.batch}
+          </div>
+        </div>
+        <button onClick={handleLogout} style={styles.logoutButton}>
+          Logout
+        </button>
+      </div>
+
+      <div style={styles.messagesContainer}>
+        {messages.length === 0 ? (
+          <div style={styles.emptyState}>
+            <p>📭 No messages yet</p>
+            <p style={{ fontSize: 14, color: "#666" }}>
+              Messages from HOD will appear here
+            </p>
+          </div>
+        ) : (
+          messages.map((msg, i) => (
+            <div key={i} style={styles.messageCard}>
+              <div style={styles.messageHeader}>
+                <strong>👨‍💼 {msg.senderName || "HOD"}</strong>
+                <span style={styles.timestamp}>
+                  {new Date(msg.timestamp).toLocaleString()}
+                </span>
+              </div>
+              <div style={styles.messageContent}>{msg.message}</div>
+            </div>
+          ))
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      <div style={styles.infoBox}>
+        ℹ️ This is a read-only message board. You'll receive notifications from your HOD here.
+      </div>
+
+      <ToastContainer position="bottom-right" />
+    </div>
+  );
+};
+
+// ==================== STYLES ====================
+const styles = {
+  container: {
+    minHeight: "100vh",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+    fontFamily: "Arial, sans-serif",
+    padding: "20px",
+  },
+  formCard: {
+    background: "white",
+    padding: "40px",
+    borderRadius: "20px",
+    boxShadow: "0 10px 40px rgba(0,0,0,0.2)",
+    width: "100%",
+    maxWidth: "400px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "15px",
+  },
+  title: {
+    margin: "0 0 10px 0",
+    color: "#333",
+    textAlign: "center",
+  },
+  subtitle: {
+    margin: "0 0 20px 0",
+    color: "#666",
+    fontSize: "14px",
+    textAlign: "center",
+  },
+  input: {
+    width: "100%",
+    padding: "12px",
+    borderRadius: "10px",
+    border: "2px solid #ddd",
+    fontSize: "14px",
+    boxSizing: "border-box",
+  },
+  primaryButton: {
+    width: "100%",
+    padding: "12px",
+    backgroundColor: "#667eea",
+    color: "white",
+    border: "none",
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontSize: "16px",
+    fontWeight: "bold",
+    marginTop: "10px",
+  },
+  secondaryButton: {
+    width: "100%",
+    padding: "12px",
+    backgroundColor: "transparent",
+    color: "#667eea",
+    border: "2px solid #667eea",
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontSize: "14px",
+  },
+  chatContainer: {
+    width: "100%",
+    maxWidth: "800px",
+    margin: "20px auto",
+    height: "90vh",
+    display: "flex",
+    flexDirection: "column",
+    background: "white",
+    borderRadius: "15px",
+    boxShadow: "0 10px 40px rgba(0,0,0,0.1)",
+    overflow: "hidden",
+  },
+  chatHeader: {
+    padding: "20px",
+    background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+    color: "white",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  chatTitle: {
+    margin: "0 0 5px 0",
+  },
+  studentInfo: {
+    fontSize: "13px",
+    opacity: 0.9,
+  },
+  logoutButton: {
+    padding: "8px 16px",
+    background: "rgba(255,255,255,0.2)",
+    color: "white",
+    border: "1px solid white",
+    borderRadius: "20px",
+    cursor: "pointer",
+    fontSize: "14px",
+  },
+  messagesContainer: {
+    flex: 1,
+    overflowY: "auto",
+    padding: "20px",
+    background: "#f5f5f5",
+  },
+  emptyState: {
+    textAlign: "center",
+    padding: "60px 20px",
+    color: "#999",
+  },
+  messageCard: {
+    background: "white",
+    padding: "15px",
+    borderRadius: "10px",
+    marginBottom: "15px",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
+    borderLeft: "4px solid #667eea",
+  },
+  messageHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    marginBottom: "10px",
+    alignItems: "center",
+  },
+  timestamp: {
+    fontSize: "11px",
+    color: "#999",
+  },
+  messageContent: {
+    color: "#333",
+    lineHeight: "1.5",
+    whiteSpace: "pre-wrap",
+  },
+  infoBox: {
+    padding: "12px",
+    background: "#fffbea",
+    borderTop: "1px solid #f0e68c",
+    fontSize: "13px",
+    color: "#666",
+    textAlign: "center",
+  },
+};
+
+export default StudentChat;
