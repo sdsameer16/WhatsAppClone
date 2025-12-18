@@ -40,7 +40,14 @@ mongoose.connect(
 });
 
 app.get("/health", (req, res) => {
-  res.json({ status: "ok" });
+  res.json({ 
+    status: "ok",
+    features: {
+      xlsx: typeof xlsx !== 'undefined',
+      multer: typeof multer !== 'undefined',
+      uploadEndpoint: true
+    }
+  });
 });
 
 server.listen(5000, () => {
@@ -358,11 +365,15 @@ app.post("/api/upload-sections", upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
+    console.log("File received:", req.file.originalname, "Size:", req.file.size);
+
     // Parse Excel/CSV file
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const data = xlsx.utils.sheet_to_json(worksheet);
+
+    console.log("Parsed rows:", data.length);
 
     let updated = 0;
     let notFound = 0;
@@ -402,6 +413,8 @@ app.post("/api/upload-sections", upload.single("file"), async (req, res) => {
       }
     }
 
+    console.log("Upload complete - Updated:", updated, "Not found:", notFound);
+
     res.json({
       success: true,
       message: "Sections uploaded successfully",
@@ -415,7 +428,11 @@ app.post("/api/upload-sections", upload.single("file"), async (req, res) => {
     });
   } catch (error) {
     console.error("Error uploading sections:", error);
-    res.status(500).json({ error: "Failed to upload sections" });
+    res.status(500).json({ 
+      error: "Failed to upload sections",
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
