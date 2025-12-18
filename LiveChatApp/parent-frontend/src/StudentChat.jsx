@@ -4,12 +4,13 @@ import axios from "axios";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-const API_URL = "http://localhost:5000";
+const API_URL = "https://whatsappclone-1-1r7l.onrender.com";
 let socket = null;
 
 const StudentChat = () => {
   const [currentView, setCurrentView] = useState("login"); // login, register, chat
   const [studentId, setStudentId] = useState("");
+  const [mobileNumber, setMobileNumber] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [branch, setBranch] = useState("");
@@ -103,14 +104,15 @@ const StudentChat = () => {
   };
 
   const handleLogin = async () => {
-    if (!studentId.trim() || !password.trim()) {
-      toast.error("Please enter Student ID and password");
+    if ((!studentId.trim() && !mobileNumber.trim()) || !password.trim()) {
+      toast.error("Please enter Student ID/Mobile number and password");
       return;
     }
 
     try {
       const response = await axios.post(`${API_URL}/api/student/login`, {
-        studentId,
+        studentId: studentId || undefined,
+        mobileNumber: mobileNumber || undefined,
         password,
       });
 
@@ -127,7 +129,7 @@ const StudentChat = () => {
   };
 
   const handleRegister = async () => {
-    if (!studentId.trim() || !name.trim() || !password.trim() || !branch.trim() || !startYear || !endYear) {
+    if (!studentId.trim() || !name.trim() || !mobileNumber.trim() || !password.trim() || !branch.trim() || !startYear || !endYear) {
       toast.error("Please fill all fields");
       return;
     }
@@ -141,6 +143,7 @@ const StudentChat = () => {
       const response = await axios.post(`${API_URL}/api/student/register`, {
         studentId,
         name,
+        mobileNumber,
         password,
         branch,
         startYear: parseInt(startYear),
@@ -182,7 +185,7 @@ const StudentChat = () => {
             type="text"
             value={studentId}
             onChange={(e) => setStudentId(e.target.value)}
-            placeholder="Student ID"
+            placeholder="Student ID or Mobile Number"
             style={styles.input}
             onKeyPress={(e) => e.key === "Enter" && handleLogin()}
           />
@@ -223,7 +226,7 @@ const StudentChat = () => {
             type="text"
             value={studentId}
             onChange={(e) => setStudentId(e.target.value)}
-            placeholder="Student ID"
+            placeholder="Student ID (e.g., STU001)"
             style={styles.input}
           />
 
@@ -233,6 +236,15 @@ const StudentChat = () => {
             onChange={(e) => setName(e.target.value)}
             placeholder="Full Name"
             style={styles.input}
+          />
+
+          <input
+            type="tel"
+            value={mobileNumber}
+            onChange={(e) => setMobileNumber(e.target.value)}
+            placeholder="Mobile Number (10 digits)"
+            style={styles.input}
+            maxLength="10"
           />
 
           <input
@@ -293,6 +305,7 @@ const StudentChat = () => {
           <h3 style={styles.chatTitle}>📚 College Messages</h3>
           <div style={styles.studentInfo}>
             {student.name} • {student.studentId} • {student.branch} • Batch: {student.batch}
+            {student.section && ` • Section: ${student.section}`}
           </div>
         </div>
         <button onClick={handleLogout} style={styles.logoutButton}>

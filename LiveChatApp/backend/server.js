@@ -5,6 +5,8 @@ import mongoose from "mongoose";
 import cors from "cors";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import multer from "multer";
+import xlsx from "xlsx";
 import Student from "./models/Student.js";
 import Admin from "./models/Admin.js";
 import Message from "./models/Message.js";
@@ -20,6 +22,9 @@ initializeFirebase();
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Configure multer for file uploads
+const upload = multer({ storage: multer.memoryStorage() });
 
 const server = http.createServer(app);
 
@@ -56,17 +61,24 @@ let adminSocket = null;
 // Student Registration
 app.post("/api/student/register", async (req, res) => {
   try {
-    const { studentId, name, password, branch, startYear, endYear } = req.body;
+    const { studentId, name, mobileNumber, password, branch, startYear, endYear } = req.body;
 
     // Validation
-    if (!studentId || !name || !password || !branch || !startYear || !endYear) {
+    if (!studentId || !name || !mobileNumber || !password || !branch || !startYear || !endYear) {
       return res.status(400).json({ error: "All fields are required" });
     }
 
-    // Check if student already exists
-    const existingStudent = await Student.findOne({ studentId });
+    // Check if student already exists (by studentId or mobile number)
+    const existingStudent = await Student.findOne({ 
+      $or: [{ studentId }, { mobileNumber }] 
+    });
     if (existingStudent) {
-      return res.status(400).json({ error: "Student ID already exists" });
+      if (existingStudent.studentId === studentId) {
+        return res.status(400).json({ error: "Student ID already exists" });
+      }
+      if (existingStudent.mobileNumber === mobileNumber) {
+        return res.status(400).json({ error: "Mobile number already registered" });
+      }
     }
 
     // Hash password
@@ -76,6 +88,7 @@ app.post("/api/student/register", async (req, res) => {
     const student = new Student({
       studentId,
       name,
+      mobileNumber,
       password: hashedPassword,
       branch: branch.toUpperCase(),
       startYear: parseInt(startYear),
@@ -86,7 +99,7 @@ app.post("/api/student/register", async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { studentId: student.studentId, role: "student" },
+      { studentId: student.studentId, mobileNumber: student.mobileNumber, role: "student" },
       process.env.JWT_SECRET || "your-secret-key",
       { expiresIn: "7d" }
     );
@@ -98,8 +111,10 @@ app.post("/api/student/register", async (req, res) => {
       student: {
         studentId: student.studentId,
         name: student.name,
+        mobileNumber: student.mobileNumber,
         branch: student.branch,
         batch: student.batch,
+        section: student.section,
       },
     });
   } catch (error) {
@@ -108,17 +123,19 @@ app.post("/api/student/register", async (req, res) => {
   }
 });
 
-// Student Login
+// Student Login (supports both studentId and mobile number)
 app.post("/api/student/login", async (req, res) => {
   try {
-    const { studentId, password } = req.body;
+    const { studentId, mobileNumber, password } = req.body;
 
-    if (!studentId || !password) {
-      return res.status(400).json({ error: "Student ID and password are required" });
+    if ((!studentId && !mobileNumber) || !password) {
+      return res.status(400).json({ error: "Student ID/Mobile number and password are required" });
     }
 
-    // Find student
-    const student = await Student.findOne({ studentId });
+    // Find student by studentId or mobile number
+    const student = await Student.findOne({ 
+      $or: [{ studentId }, { mobileNumber }] 
+    });
     if (!student) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
@@ -135,7 +152,7 @@ app.post("/api/student/login", async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { studentId: student.studentId, role: "student" },
+      { studentId: student.studentId, mobileNumber: student.mobileNumber, role: "student" },
       process.env.JWT_SECRET || "your-secret-key",
       { expiresIn: "7d" }
     );
@@ -146,8 +163,10 @@ app.post("/api/student/login", async (req, res) => {
       student: {
         studentId: student.studentId,
         name: student.name,
+        mobileNumber: student.mobileNumber,
         branch: student.branch,
         batch: student.batch,
+        section: student.section,
         startYear: student.startYear,
         endYear: student.endYear,
       },
@@ -297,7 +316,7 @@ app.get("/api/branches", async (req, res) => {
 // Get students by batch and branch
 app.get("/api/students", async (req, res) => {
   try {
-    const { batches, branches } = req.query;
+    const { batches, branches, section } = req.query;
 
     const filter = {};
     if (batches) {
@@ -306,15 +325,97 @@ app.get("/api/students", async (req, res) => {
     if (branches) {
       filter.branch = { $in: branches.split(",").map(b => b.toUpperCase()) };
     }
+    if (section) {
+      filter.section = section.toUpperCase();
+    }
 
     const students = await Student.find(filter)
-      .select("studentId name branch batch isOnline lastSeen")
-      .sort({ batch: -1, branch: 1, name: 1 });
+      .select("studentId name mobileNumber branch batch section isOnline lastSeen")
+      .sort({ batch: -1, branch: 1, section: 1, name: 1 });
 
     res.json(students);
   } catch (error) {
     console.error("Error fetching students:", error);
     res.status(500).json({ error: "Failed to fetch students" });
+  }
+});
+
+// Get all sections
+app.get("/api/sections", async (req, res) => {
+  try {
+    const sections = await Student.distinct("section");
+    res.json(sections.filter(s => s !== null));
+  } catch (error) {
+    console.error("Error fetching sections:", error);
+    res.status(500).json({ error: "Failed to fetch sections" });
+  }
+});
+
+// Upload Excel/CSV file to assign sections
+app.post("/api/upload-sections", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    // Parse Excel/CSV file
+    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = xlsx.utils.sheet_to_json(worksheet);
+
+    let updated = 0;
+    let notFound = 0;
+    const errors = [];
+
+    // Expected columns: studentId, section
+    // Or: mobileNumber, section
+    // Or: studentId, mobileNumber, section
+    for (const row of data) {
+      const studentId = row.studentId || row.StudentID || row.student_id;
+      const mobileNumber = row.mobileNumber || row.mobile_number || row.phone;
+      const section = row.section || row.Section || row.CLASS || row.class;
+
+      if (!section) {
+        errors.push(`Missing section for row: ${JSON.stringify(row)}`);
+        continue;
+      }
+
+      if (!studentId && !mobileNumber) {
+        errors.push(`Missing studentId or mobileNumber for row: ${JSON.stringify(row)}`);
+        continue;
+      }
+
+      // Find and update student
+      const query = {};
+      if (studentId) query.studentId = studentId;
+      if (mobileNumber) query.mobileNumber = mobileNumber;
+
+      const student = await Student.findOne(query);
+      if (student) {
+        student.section = section.toString().toUpperCase();
+        await student.save();
+        updated++;
+      } else {
+        notFound++;
+        errors.push(`Student not found: ${studentId || mobileNumber}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: "Sections uploaded successfully",
+      stats: {
+        total: data.length,
+        updated,
+        notFound,
+        errors: errors.length,
+      },
+      errors: errors.length > 0 ? errors.slice(0, 10) : [], // Return first 10 errors
+    });
+  } catch (error) {
+    console.error("Error uploading sections:", error);
+    res.status(500).json({ error: "Failed to upload sections" });
   }
 });
 

@@ -12,6 +12,13 @@ const studentSchema = new mongoose.Schema({
     required: true,
     trim: true,
   },
+  mobileNumber: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true,
+    // Format: 10-digit number or with country code
+  },
   password: {
     type: String,
     required: true,
@@ -34,10 +41,17 @@ const studentSchema = new mongoose.Schema({
     type: String,
     // Format: "2023-2027" - auto-generated from startYear and endYear
   },
-  fcmToken: {
+  section: {
     type: String,
     default: null,
-    // For Firebase Cloud Messaging push notifications
+    trim: true,
+    uppercase: true,
+    // Format: "A", "B", "C", etc. - assigned via Excel upload
+  },
+  fcmTokens: {
+    type: [String],
+    default: [],
+    // Array of FCM tokens for multiple devices (web, Android)
   },
   isOnline: {
     type: Boolean,

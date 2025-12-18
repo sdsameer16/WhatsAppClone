@@ -4,7 +4,7 @@ import axios from "axios";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-const socket = io("http://localhost:5000");
+const socket = io(" https://whatsappclone-1-1r7l.onrender.com");
 
 const ParentChat = () => {
   const [parentName, setParentName] = useState("");
@@ -28,7 +28,7 @@ const ParentChat = () => {
       socket.emit("register", { role: "parent", parentId: parentName });
 
       // Load messages for this parent
-      axios.get(`http://localhost:5000/messages/${parentName}`).then((res) => {
+      axios.get(` https://whatsappclone-1-1r7l.onrender.com/messages/${parentName}`).then((res) => {
         setChat(res.data);
       });
 

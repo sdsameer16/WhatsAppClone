@@ -4,7 +4,7 @@ import axios from "axios";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-const socket = io("http://localhost:5000");
+const socket = io(" https://whatsappclone-1-1r7l.onrender.com");
 
 const CaretakerChat = () => {
   const [parents, setParents] = useState([]);
@@ -19,7 +19,7 @@ const CaretakerChat = () => {
   useEffect(() => {
     const fetchParents = async () => {
       try {
-        const res = await axios.get("http://localhost:5000/parents");
+        const res = await axios.get(" https://whatsappclone-1-1r7l.onrender.com/parents");
         setParents(res.data);
         console.log("Parents loaded:", res.data);
       } catch (error) {
@@ -102,7 +102,7 @@ const CaretakerChat = () => {
 
   const refreshParents = async () => {
     try {
-      const res = await axios.get("http://localhost:5000/parents");
+      const res = await axios.get(" https://whatsappclone-1-1r7l.onrender.com/parents");
       setParents(res.data);
       console.log("Parents refreshed:", res.data);
     } catch (error) {
@@ -115,7 +115,7 @@ const CaretakerChat = () => {
 
     try {
       // First try to get messages from database
-      const res = await axios.get(`http://localhost:5000/messages/${parentId}`);
+      const res = await axios.get(` https://whatsappclone-1-1r7l.onrender.com/messages/${parentId}`);
       let chatMessages = res.data;
 
       // If no messages in database, check localStorage for accumulated logs
@@ -180,7 +180,7 @@ const CaretakerChat = () => {
       }));
 
       // Save to MongoDB via backend
-      await axios.post("http://localhost:5000/save-chat-logs", { logs: mongoDBLogs });
+      await axios.post(" https://whatsappclone-1-1r7l.onrender.com/save-chat-logs", { logs: mongoDBLogs });
 
       // Create downloadable log file
       const logText = allLogs.map(log => {
