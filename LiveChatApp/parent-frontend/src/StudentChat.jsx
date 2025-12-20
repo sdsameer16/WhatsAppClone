@@ -51,7 +51,16 @@ const StudentChat = () => {
           message: data.message,
           timestamp: data.timestamp,
         };
-        setMessages((prev) => [...prev, newMsg]);
+        
+        // Check if message already exists (avoid duplicates)
+        setMessages((prev) => {
+          const exists = prev.some(msg => msg.messageId === data.messageId);
+          if (exists) {
+            return prev; // Don't add duplicate
+          }
+          return [...prev, newMsg];
+        });
+        
         toast.info(`New message from ${data.senderName}!`);
         playNotification();
 
