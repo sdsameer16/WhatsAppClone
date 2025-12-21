@@ -18,16 +18,17 @@ import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 // Your web app's Firebase configuration
 // TODO: Replace with your actual Firebase config
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyBBpcfHZHVciC-ZM7srN264ncgMtRMqvoU",
+  authDomain: "chtting-fa0db.firebaseapp.com",
+  projectId: "chtting-fa0db",
+  storageBucket: "chtting-fa0db.firebasestorage.app",
+  messagingSenderId: "638820938018",
+  appId: "1:638820938018:web:c8a54ace46c499be6cf57b",
+  measurementId: "G-09DLBSS18N"
 };
 
 // VAPID key for web push
-const VAPID_KEY = "YOUR_VAPID_KEY";
+const VAPID_KEY = "BC1GODYUCX5Xh2gd18vv4NeL84eJ1HYqURICBOqbRmRQSpoQsE3ieHRSKVvZzFQzZLZvKITr6Jmsggck7akPNTg";
 
 let app;
 let messaging;
