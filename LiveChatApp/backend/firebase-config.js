@@ -56,7 +56,7 @@ export const initializeFirebase = () => {
   }
 };
 
-export const sendPushNotification = async (fcmToken, title, body, data = {}) => {
+export const sendPushNotification = async (fcmToken, title, body, data = {}, badgeCount = 1) => {
   if (!firebaseInitialized) {
     console.log('Firebase not initialized, skipping push notification');
     return { success: false, error: 'Firebase not initialized' };
@@ -70,11 +70,32 @@ export const sendPushNotification = async (fcmToken, title, body, data = {}) => 
       },
       data,
       token: fcmToken,
+      android: {
+        notification: {
+          icon: 'ic_notification',
+          color: '#f5576c',
+          sound: 'default',
+          priority: 'high',
+          defaultSound: true,
+          defaultVibrateTimings: true,
+          notificationCount: badgeCount, // Badge count for Android
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            badge: badgeCount, // Badge count for iOS
+            sound: 'default',
+          },
+        },
+      },
       webpush: {
         notification: {
           icon: '/logo192.png',
           badge: '/badge.png',
           vibrate: [200, 100, 200],
+          tag: 'student-message', // Group notifications
+          renotify: true,
         },
         fcmOptions: {
           link: '/',

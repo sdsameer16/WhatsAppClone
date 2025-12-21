@@ -6,14 +6,13 @@ importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js')
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compat.js');
 
 // Initialize the Firebase app in the service worker
-// TODO: Replace with your actual Firebase config
 firebase.initializeApp({
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyDoRVuByteElV-7McGuCu1k28Jigp4XO8g",
+  authDomain: "chtting-fa0db.firebaseapp.com",
+  projectId: "chtting-fa0db",
+  storageBucket: "chtting-fa0db.firebasestorage.app",
+  messagingSenderId: "638820938018",
+  appId: "1:638820938018:web:c8a54ace46c499be6cf57b"
 });
 
 // Retrieve an instance of Firebase Messaging
@@ -27,15 +26,7 @@ messaging.onBackgroundMessage((payload) => {
   const notificationOptions = {
     body: payload.notification.body,
     icon: '/logo192.png',
-    badge: '/badge.png',
-    vibrate: [200, 100, 200],
-    data: payload.data,
-  };
-
-  self.registration.showNotification(notificationTitle, notificationOptions);
-});
-
-// Handle notification clicks
+    badge: payload.data?.badgeCount || 1,  // Badge count for unread messages
 self.addEventListener('notificationclick', (event) => {
   console.log('Notification clicked:', event);
   

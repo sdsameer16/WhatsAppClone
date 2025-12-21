@@ -3,6 +3,7 @@ import { io } from "socket.io-client";
 import axios from "axios";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { requestNotificationPermission, onMessageListener } from "./firebaseConfig";
 
 const API_URL = "https://whatsappclone-1-1r7l.onrender.com";
 let socket = null;
@@ -33,6 +34,30 @@ const StudentChat = () => {
 
   useEffect(() => {
     if (student && currentView === "chat") {
+      // Request notification permission and register FCM token
+      requestNotificationPermission().then(async (fcmToken) => {
+        if (fcmToken) {
+          console.log("FCM Token received:", fcmToken);
+          
+          // Send FCM token to backend
+          try {
+            await axios.post(`${API_URL}/api/fcm-token`, {
+              studentId: student.studentId,
+              fcmToken: fcmToken,
+            });
+            console.log("FCM token registered with backend");
+          } catch (error) {
+            console.error("Failed to register FCM token:", error);
+          }
+        }
+      });
+
+      // Listen for foreground messages
+      onMessageListener().then((payload) => {
+        console.log("Foreground notification:", payload);
+        toast.info(`📬 ${payload.notification.title}: ${payload.notification.body}`);
+      }).catch((err) => console.log("Failed to receive foreground message:", err));
+
       // Initialize socket connection
       socket = io(API_URL);
 

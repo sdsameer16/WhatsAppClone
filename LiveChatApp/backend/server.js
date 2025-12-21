@@ -227,7 +227,34 @@ app.post("/api/admin/login", async (req, res) => {
     res.status(500).json({ error: "Login failed" });
   }
 });
+// Register FCM token for push notifications
+app.post("/api/fcm-token", async (req, res) => {
+  try {
+    const { studentId, fcmToken } = req.body;
 
+    if (!studentId || !fcmToken) {
+      return res.status(400).json({ error: "Student ID and FCM token are required" });
+    }
+
+    // Find student and add token if not already present
+    const student = await Student.findOne({ studentId });
+    if (!student) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+
+    // Add token only if it doesn't exist
+    if (!student.fcmTokens.includes(fcmToken)) {
+      student.fcmTokens.push(fcmToken);
+      await student.save();
+      console.log(`FCM token registered for student ${studentId}`);
+    }
+
+    res.json({ success: true, message: "FCM token registered successfully" });
+  } catch (error) {
+    console.error("FCM token registration error:", error);
+    res.status(500).json({ error: "Failed to register FCM token" });
+  }
+});
 // Create default admin (for first time setup)
 app.post("/api/admin/create", async (req, res) => {
   try {
@@ -718,25 +745,47 @@ const sendBatchInfoToAdmin = async () => {
 
 // Helper function for push notifications
 const sendPushNotificationToStudent = async (student, message) => {
-  if (!student.fcmToken) {
-    console.log(`No FCM token for student ${student.studentId}`);
+  if (!student.fcmTokens || student.fcmTokens.length === 0) {
+    console.log(`No FCM tokens for student ${student.studentId}`);
     return;
   }
 
   try {
-    const result = await sendPushNotification(
-      student.fcmToken,
-      'New message from HOD',
-      message.substring(0, 100),
-      {
-        messageId: message.messageId || '',
-        type: 'batch_message',
+    // Count unread messages for this student (messages where delivered is false)
+    const unreadCount = await Message.countDocuments({
+      recipients: {
+        $elemMatch: {
+          studentId: student.studentId,
+          delivered: false
+        }
       }
-    );
+    });
 
-    if (!result.success) {
-      console.log(`Failed to send notification to ${student.studentId}:`, result.error);
-    }
+    // Send notification to all registered devices
+    const notificationPromises = student.fcmTokens.map(async (fcmToken) => {
+      try {
+        const result = await sendPushNotification(
+          fcmToken,
+          'New message from HOD',
+          message.substring(0, 100),
+          {
+            messageId: message.messageId || '',
+            type: 'batch_message',
+          },
+          unreadCount || 1  // Badge count (minimum 1 for new message)
+        );
+
+        if (!result.success) {
+          console.log(`Failed to send notification to ${student.studentId} (token: ${fcmToken.substring(0, 20)}...):`, result.error);
+        }
+        return result;
+      } catch (error) {
+        console.error(`Error sending to token ${fcmToken.substring(0, 20)}...:`, error);
+        return { success: false, error: error.message };
+      }
+    });
+
+    await Promise.all(notificationPromises);
   } catch (error) {
     console.error(`Error sending notification to ${student.studentId}:`, error);
   }
