@@ -34,35 +34,49 @@ const StudentChat = () => {
 
   useEffect(() => {
     if (student && currentView === "chat") {
+      console.log("📱 Student logged in, initializing FCM...");
+      
       // Request notification permission and register FCM token
       requestNotificationPermission().then(async (fcmToken) => {
         if (fcmToken) {
-          console.log("FCM Token received:", fcmToken);
+          console.log("✅ FCM Token received:", fcmToken.substring(0, 30) + "...");
           
           // Send FCM token to backend
           try {
-            await axios.post(`${API_URL}/api/fcm-token`, {
+            console.log("📤 Sending FCM token to backend...");
+            const response = await axios.post(`${API_URL}/api/fcm-token`, {
               studentId: student.studentId,
               fcmToken: fcmToken,
             });
-            console.log("FCM token registered with backend");
+            console.log("✅ FCM token registered with backend:", response.data);
           } catch (error) {
-            console.error("Failed to register FCM token:", error);
+            console.error("❌ Failed to register FCM token:", error.response?.data || error.message);
+            // Show error to user
+            toast.error("Failed to enable notifications. Please refresh the page.");
           }
+        } else {
+          console.log("⚠️ No FCM token received - notifications will not work");
+          console.log("Possible reasons:");
+          console.log("1. Notification permission denied");
+          console.log("2. Browser doesn't support notifications");
+          console.log("3. Service worker not registered");
         }
+      }).catch(err => {
+        console.error("❌ Error in requestNotificationPermission:", err);
       });
 
       // Listen for foreground messages
       onMessageListener().then((payload) => {
-        console.log("Foreground notification:", payload);
+        console.log("📬 Foreground notification received:", payload);
         toast.info(`📬 ${payload.notification.title}: ${payload.notification.body}`);
-      }).catch((err) => console.log("Failed to receive foreground message:", err));
+      }).catch((err) => console.log("⚠️ Failed to setup foreground message listener:", err));
 
       // Initialize socket connection
       socket = io(API_URL);
 
-      // Register student
+      // Register student with socket (this sets online status)
       socket.emit("registerStudent", { studentId: student.studentId });
+      console.log("🔌 Socket connected, student registered as ONLINE");
 
       // Load message history
       loadMessages();

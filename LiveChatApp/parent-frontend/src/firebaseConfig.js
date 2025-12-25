@@ -26,33 +26,44 @@ try {
 export const requestNotificationPermission = async () => {
   try {
     if (!messaging) {
-      console.log("Messaging not initialized");
+      console.log("❌ Messaging not initialized");
       return null;
     }
 
+    console.log("🔔 Requesting notification permission...");
+    
     // Request permission
     const permission = await Notification.requestPermission();
+    console.log(`Permission status: ${permission}`);
+    
     if (permission === 'granted') {
-      console.log('Notification permission granted.');
+      console.log('✅ Notification permission granted.');
+      
+      // Wait for service worker to be ready
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.ready;
+        console.log('✅ Service Worker ready:', registration);
+      }
       
       // Get FCM token
+      console.log('📱 Getting FCM token...');
       const token = await getToken(messaging, {
         vapidKey: 'BC1GODYUCX5Xh2gd18vv4NeL84eJ1HYqURICBOqbRmRQSpoQsE3ieHRSKVvZzFQzZLZvKITr6Jmsggck7akPNTg'
       });
       
       if (token) {
-        console.log('FCM Token:', token);
+        console.log('✅ FCM Token received:', token.substring(0, 30) + '...');
         return token;
       } else {
-        console.log('No registration token available.');
+        console.log('❌ No registration token available.');
         return null;
       }
     } else {
-      console.log('Unable to get permission to notify.');
+      console.log('❌ Unable to get permission to notify. Permission:', permission);
       return null;
     }
   } catch (error) {
-    console.error('An error occurred while retrieving token:', error);
+    console.error('❌ An error occurred while retrieving token:', error);
     return null;
   }
 };
