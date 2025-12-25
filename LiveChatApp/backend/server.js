@@ -641,7 +641,7 @@ io.on("connection", (socket) => {
         } else {
           offlineCount++;
           // Send push notification via Firebase
-          sendPushNotificationToStudent(student, message);
+          sendPushNotificationToStudent(student, message, newMessage.messageId);
         }
       });
 
@@ -744,7 +744,7 @@ const sendBatchInfoToAdmin = async () => {
 };
 
 // Helper function for push notifications
-const sendPushNotificationToStudent = async (student, message) => {
+const sendPushNotificationToStudent = async (student, messageText, messageId = '') => {
   if (!student.fcmTokens || student.fcmTokens.length === 0) {
     console.log(`No FCM tokens for student ${student.studentId}`);
     return;
@@ -761,32 +761,36 @@ const sendPushNotificationToStudent = async (student, message) => {
       }
     });
 
+    console.log(`📤 Sending push notification to ${student.studentId} (${student.fcmTokens.length} devices, ${unreadCount} unread)`);
+
     // Send notification to all registered devices
     const notificationPromises = student.fcmTokens.map(async (fcmToken) => {
       try {
         const result = await sendPushNotification(
           fcmToken,
           'New message from HOD',
-          message.substring(0, 100),
+          messageText.substring(0, 100),
           {
-            messageId: message.messageId || '',
+            messageId: messageId,
             type: 'batch_message',
           },
           unreadCount || 1  // Badge count (minimum 1 for new message)
         );
 
-        if (!result.success) {
-          console.log(`Failed to send notification to ${student.studentId} (token: ${fcmToken.substring(0, 20)}...):`, result.error);
+        if (result.success) {
+          console.log(`✅ Notification sent to ${student.studentId} (token: ${fcmToken.substring(0, 20)}...)`);
+        } else {
+          console.log(`❌ Failed to send notification to ${student.studentId} (token: ${fcmToken.substring(0, 20)}...):`, result.error);
         }
         return result;
       } catch (error) {
-        console.error(`Error sending to token ${fcmToken.substring(0, 20)}...:`, error);
+        console.error(`❌ Error sending to token ${fcmToken.substring(0, 20)}...:`, error.message);
         return { success: false, error: error.message };
       }
     });
 
     await Promise.all(notificationPromises);
   } catch (error) {
-    console.error(`Error sending notification to ${student.studentId}:`, error);
+    console.error(`❌ Error sending notification to ${student.studentId}:`, error.message);
   }
 };
