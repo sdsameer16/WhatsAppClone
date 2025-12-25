@@ -232,13 +232,17 @@ app.post("/api/fcm-token", async (req, res) => {
   try {
     const { studentId, fcmToken } = req.body;
 
+    console.log(`📱 FCM token registration request from student: ${studentId}`);
+
     if (!studentId || !fcmToken) {
+      console.log("❌ Missing studentId or fcmToken");
       return res.status(400).json({ error: "Student ID and FCM token are required" });
     }
 
     // Find student and add token if not already present
     const student = await Student.findOne({ studentId });
     if (!student) {
+      console.log(`❌ Student ${studentId} not found in database`);
       return res.status(404).json({ error: "Student not found" });
     }
 
@@ -246,13 +250,20 @@ app.post("/api/fcm-token", async (req, res) => {
     if (!student.fcmTokens.includes(fcmToken)) {
       student.fcmTokens.push(fcmToken);
       await student.save();
-      console.log(`FCM token registered for student ${studentId}`);
+      console.log(`✅ FCM token registered for student ${studentId} (Total tokens: ${student.fcmTokens.length})`);
+      console.log(`   Token: ${fcmToken.substring(0, 30)}...`);
+    } else {
+      console.log(`ℹ️  Token already exists for student ${studentId}`);
     }
 
-    res.json({ success: true, message: "FCM token registered successfully" });
+    res.json({ 
+      success: true, 
+      message: "FCM token registered successfully",
+      tokenCount: student.fcmTokens.length 
+    });
   } catch (error) {
-    console.error("FCM token registration error:", error);
-    res.status(500).json({ error: "Failed to register FCM token" });
+    console.error("❌ FCM token registration error:", error);
+    res.status(500).json({ error: "Failed to register FCM token", details: error.message });
   }
 });
 // Create default admin (for first time setup)
@@ -544,15 +555,20 @@ io.on("connection", (socket) => {
   // Student registration
   socket.on("registerStudent", async (data) => {
     const { studentId } = data;
-    console.log(`Student ${studentId} connected`);
+    console.log(`🔌 Student ${studentId} connected (Socket ID: ${socket.id})`);
 
     connectedStudents[studentId] = socket.id;
 
     // Update student online status
-    await Student.findOneAndUpdate(
+    const student = await Student.findOneAndUpdate(
       { studentId },
-      { isOnline: true, lastSeen: new Date() }
+      { isOnline: true, lastSeen: new Date() },
+      { new: true }
     );
+
+    if (student) {
+      console.log(`✅ Student ${studentId} is now ONLINE (has ${student.fcmTokens.length} FCM tokens)`);
+    }
 
     // Notify admin about student count update
     if (adminSocket) {
@@ -560,7 +576,6 @@ io.on("connection", (socket) => {
     }
 
     // Send pending messages to student
-    const student = await Student.findOne({ studentId });
     if (student) {
       const pendingMessages = await Message.find({
         targetBatches: student.batch,
@@ -568,6 +583,10 @@ io.on("connection", (socket) => {
         "recipients.studentId": studentId,
         "recipients.delivered": false,
       });
+
+      if (pendingMessages.length > 0) {
+        console.log(`📨 Sending ${pendingMessages.length} pending messages to ${studentId}`);
+      }
 
       pendingMessages.forEach(msg => {
         socket.emit("receiveMessage", {
@@ -685,7 +704,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", async () => {
-    console.log("User disconnected:", socket.id);
+    console.log("🔌 User disconnected:", socket.id);
 
     // Find and update student status
     for (const studentId in connectedStudents) {
@@ -695,12 +714,14 @@ io.on("connection", (socket) => {
           { studentId },
           { isOnline: false, lastSeen: new Date() }
         );
+        console.log(`❌ Student ${studentId} is now OFFLINE`);
         break;
       }
     }
 
     if (socket.id === adminSocket) {
       adminSocket = null;
+      console.log("❌ Admin disconnected");
     }
 
     // Notify admin about student count update
