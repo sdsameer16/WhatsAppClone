@@ -1,0 +1,620 @@
+import React, { useState, useEffect } from "react";
+import { io } from "socket.io-client";
+import axios from "axios";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+
+const API_URL = "https://whatsappclone-1-1r7l.onrender.com";
+let socket = null;
+
+const AdminChat = () => {
+  const [currentView, setCurrentView] = useState("login"); // login, chat
+  const [adminId, setAdminId] = useState("");
+  const [password, setPassword] = useState("");
+  const [admin, setAdmin] = useState(null);
+  
+  // Batch selection state
+  const [batches, setBatches] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [selectedBatches, setSelectedBatches] = useState([]);
+  const [selectedBranches, setSelectedBranches] = useState([]);
+  const [message, setMessage] = useState("");
+  const [filterBranch, setFilterBranch] = useState("");
+  
+  useEffect(() => {
+    // Check if admin is already logged in
+    const token = localStorage.getItem("adminToken");
+    const savedAdmin = localStorage.getItem("admin");
+    
+    if (token && savedAdmin) {
+      setAdmin(JSON.parse(savedAdmin));
+      setCurrentView("chat");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (admin && currentView === "chat") {
+      // Initialize socket connection
+      socket = io(API_URL);
+      socket.emit("registerAdmin");
+
+      // Listen for batch info updates
+      socket.on("batchInfo", (data) => {
+        setBatches(data);
+      });
+
+      // Listen for message sent confirmation
+      socket.on("messageSent", (data) => {
+        if (data.success) {
+          toast.success(
+            `Message sent to ${data.totalStudents} students (${data.onlineCount} online, ${data.offlineCount} offline)`
+          );
+          setMessage("");
+          setSelectedBatches([]);
+          setSelectedBranches([]);
+        } else {
+          toast.error(data.error || "Failed to send message");
+        }
+      });
+
+      // Load batches and branches
+      loadBatchesAndBranches();
+
+      return () => {
+        if (socket) {
+          socket.disconnect();
+        }
+      };
+    }
+  }, [admin, currentView]);
+
+  const loadBatchesAndBranches = async () => {
+    try {
+      const [batchesRes, branchesRes] = await Promise.all([
+        axios.get(`${API_URL}/api/batches`),
+        axios.get(`${API_URL}/api/branches`),
+      ]);
+      
+      setBatches(batchesRes.data);
+      setBranches(branchesRes.data);
+    } catch (error) {
+      console.error("Error loading data:", error);
+      toast.error("Failed to load batches and branches");
+    }
+  };
+
+  const handleLogin = async () => {
+    if (!adminId.trim() || !password.trim()) {
+      toast.error("Please enter Admin ID and password");
+      return;
+    }
+
+    try {
+      const response = await axios.post(`${API_URL}/api/admin/login`, {
+        adminId,
+        password,
+      });
+
+      if (response.data.success) {
+        localStorage.setItem("adminToken", response.data.token);
+        localStorage.setItem("admin", JSON.stringify(response.data.admin));
+        setAdmin(response.data.admin);
+        setCurrentView("chat");
+        toast.success("Login successful!");
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.error || "Login failed");
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("adminToken");
+    localStorage.removeItem("admin");
+    setAdmin(null);
+    setCurrentView("login");
+    if (socket) {
+      socket.disconnect();
+    }
+    toast.info("Logged out successfully");
+  };
+
+  const toggleBatch = (batch) => {
+    setSelectedBatches(prev =>
+      prev.includes(batch) ? prev.filter(b => b !== batch) : [...prev, batch]
+    );
+  };
+
+  const toggleBranch = (branch) => {
+    setSelectedBranches(prev =>
+      prev.includes(branch) ? prev.filter(b => b !== branch) : [...prev, branch]
+    );
+  };
+
+  const sendBatchMessage = () => {
+    if (!message.trim()) {
+      toast.error("Please enter a message");
+      return;
+    }
+
+    if (selectedBatches.length === 0) {
+      toast.error("Please select at least one batch");
+      return;
+    }
+
+    if (selectedBranches.length === 0) {
+      toast.error("Please select at least one branch");
+      return;
+    }
+
+    socket.emit("sendBatchMessage", {
+      batches: selectedBatches,
+      branches: selectedBranches,
+      message,
+      senderName: admin.name,
+    });
+
+    toast.info("Sending message...");
+  };
+
+  const getStudentCount = () => {
+    return batches
+      .filter(b =>
+        selectedBatches.includes(b.batch) &&
+        selectedBranches.includes(b.branch)
+      )
+      .reduce((sum, b) => sum + b.studentCount, 0);
+  };
+
+  const getOnlineCount = () => {
+    return batches
+      .filter(b =>
+        selectedBatches.includes(b.batch) &&
+        selectedBranches.includes(b.branch)
+      )
+      .reduce((sum, b) => sum + (b.onlineCount || 0), 0);
+  };
+
+  // ==================== LOGIN VIEW ====================
+  if (currentView === "login") {
+    return (
+      <div style={styles.container}>
+        <div style={styles.formCard}>
+          <h2 style={styles.title}>👨‍💼 HOD Login</h2>
+          <p style={styles.subtitle}>College Batch Messaging System</p>
+
+          <input
+            type="text"
+            value={adminId}
+            onChange={(e) => setAdminId(e.target.value)}
+            placeholder="Admin ID"
+            style={styles.input}
+            onKeyPress={(e) => e.key === "Enter" && handleLogin()}
+          />
+
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            style={styles.input}
+            onKeyPress={(e) => e.key === "Enter" && handleLogin()}
+          />
+
+          <button onClick={handleLogin} style={styles.primaryButton}>
+            Login as HOD
+          </button>
+        </div>
+        <ToastContainer position="bottom-right" />
+      </div>
+    );
+  }
+
+  // ==================== ADMIN DASHBOARD ====================
+  const filteredBatches = filterBranch
+    ? batches.filter(b => b.branch === filterBranch)
+    : batches;
+
+  // Group batches by batch year
+  const batchYears = [...new Set(filteredBatches.map(b => b.batch))].sort().reverse();
+
+  return (
+    <div style={styles.dashboardContainer}>
+      <div style={styles.header}>
+        <div>
+          <h2 style={styles.headerTitle}>📢 HOD Dashboard</h2>
+          <p style={styles.headerSubtitle}>
+            {admin.name} • {admin.role} • {admin.department}
+          </p>
+        </div>
+        <button onClick={handleLogout} style={styles.logoutButton}>
+          Logout
+        </button>
+      </div>
+
+      <div style={styles.mainContent}>
+        {/* LEFT PANEL - Batch Selection */}
+        <div style={styles.leftPanel}>
+          <h3 style={styles.panelTitle}>Select Target Batches</h3>
+
+          {/* Branch Filter */}
+          <div style={styles.filterSection}>
+            <label style={styles.label}>Filter by Branch:</label>
+            <select
+              value={filterBranch}
+              onChange={(e) => setFilterBranch(e.target.value)}
+              style={styles.select}
+            >
+              <option value="">All Branches</option>
+              {branches.map(branch => (
+                <option key={branch} value={branch}>{branch}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Branch Selection */}
+          <div style={styles.section}>
+            <label style={styles.label}>Select Branches:</label>
+            <div style={styles.checkboxGroup}>
+              {branches.map(branch => (
+                <label key={branch} style={styles.checkboxLabel}>
+                  <input
+                    type="checkbox"
+                    checked={selectedBranches.includes(branch)}
+                    onChange={() => toggleBranch(branch)}
+                    style={styles.checkbox}
+                  />
+                  {branch}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Batch Selection by Year */}
+          <div style={styles.section}>
+            <label style={styles.label}>Select Batches:</label>
+            {batchYears.map(year => {
+              const batchesForYear = filteredBatches.filter(b => b.batch === year);
+              const totalStudents = batchesForYear.reduce((sum, b) => sum + b.studentCount, 0);
+              const onlineStudents = batchesForYear.reduce((sum, b) => sum + (b.onlineCount || 0), 0);
+
+              return (
+                <div key={year} style={styles.batchCard}>
+                  <label style={styles.batchLabel}>
+                    <input
+                      type="checkbox"
+                      checked={selectedBatches.includes(year)}
+                      onChange={() => toggleBatch(year)}
+                      style={styles.checkbox}
+                    />
+                    <div style={styles.batchInfo}>
+                      <strong style={styles.batchYear}>{year}</strong>
+                      <div style={styles.batchStats}>
+                        <span>👥 {totalStudents} students</span>
+                        <span style={styles.onlineIndicator}>
+                          🟢 {onlineStudents} online
+                        </span>
+                      </div>
+                    </div>
+                  </label>
+
+                  {/* Show branches in this batch */}
+                  <div style={styles.branchTags}>
+                    {batchesForYear.map(b => (
+                      <span key={b.branch} style={styles.branchTag}>
+                        {b.branch}: {b.studentCount}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Selection Summary */}
+          {(selectedBatches.length > 0 && selectedBranches.length > 0) && (
+            <div style={styles.summaryCard}>
+              <h4 style={styles.summaryTitle}>📊 Target Summary</h4>
+              <p>Batches: {selectedBatches.join(", ")}</p>
+              <p>Branches: {selectedBranches.join(", ")}</p>
+              <p><strong>Total Students: {getStudentCount()}</strong></p>
+              <p style={styles.onlineText}>🟢 Online: {getOnlineCount()}</p>
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT PANEL - Message Composer */}
+        <div style={styles.rightPanel}>
+          <h3 style={styles.panelTitle}>Compose Message</h3>
+
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Type your message to students here..."
+            style={styles.textarea}
+            rows={10}
+          />
+
+          <button
+            onClick={sendBatchMessage}
+            style={{
+              ...styles.sendButton,
+              opacity: (message.trim() && selectedBatches.length > 0 && selectedBranches.length > 0) ? 1 : 0.5,
+            }}
+            disabled={!message.trim() || selectedBatches.length === 0 || selectedBranches.length === 0}
+          >
+            📤 Send to {getStudentCount()} Students
+          </button>
+
+          <div style={styles.infoBox}>
+            <strong>ℹ️ How it works:</strong>
+            <ul style={styles.infoList}>
+              <li>Select target batches and branches from the left panel</li>
+              <li>Compose your message in the text area above</li>
+              <li>Online students will receive messages instantly</li>
+              <li>Offline students will get push notifications</li>
+              <li>All messages are saved in the database</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <ToastContainer position="bottom-right" />
+    </div>
+  );
+};
+
+// ==================== STYLES ====================
+const styles = {
+  container: {
+    minHeight: "100vh",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    background: "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+    fontFamily: "Arial, sans-serif",
+    padding: "20px",
+  },
+  formCard: {
+    background: "white",
+    padding: "40px",
+    borderRadius: "20px",
+    boxShadow: "0 10px 40px rgba(0,0,0,0.2)",
+    width: "100%",
+    maxWidth: "400px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "15px",
+  },
+  title: {
+    margin: "0 0 10px 0",
+    color: "#333",
+    textAlign: "center",
+  },
+  subtitle: {
+    margin: "0 0 20px 0",
+    color: "#666",
+    fontSize: "14px",
+    textAlign: "center",
+  },
+  input: {
+    width: "100%",
+    padding: "12px",
+    borderRadius: "10px",
+    border: "2px solid #ddd",
+    fontSize: "14px",
+    boxSizing: "border-box",
+  },
+  primaryButton: {
+    width: "100%",
+    padding: "12px",
+    backgroundColor: "#f5576c",
+    color: "white",
+    border: "none",
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontSize: "16px",
+    fontWeight: "bold",
+    marginTop: "10px",
+  },
+  dashboardContainer: {
+    width: "100%",
+    minHeight: "100vh",
+    background: "#f5f7fa",
+    fontFamily: "Arial, sans-serif",
+  },
+  header: {
+    background: "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+    color: "white",
+    padding: "20px 30px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  headerTitle: {
+    margin: "0 0 5px 0",
+  },
+  headerSubtitle: {
+    margin: 0,
+    fontSize: "14px",
+    opacity: 0.9,
+  },
+  logoutButton: {
+    padding: "10px 20px",
+    background: "rgba(255,255,255,0.2)",
+    color: "white",
+    border: "1px solid white",
+    borderRadius: "20px",
+    cursor: "pointer",
+    fontSize: "14px",
+  },
+  mainContent: {
+    display: "flex",
+    gap: "20px",
+    padding: "20px",
+    maxWidth: "1400px",
+    margin: "0 auto",
+  },
+  leftPanel: {
+    flex: "1",
+    background: "white",
+    borderRadius: "15px",
+    padding: "20px",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+    maxHeight: "calc(100vh - 140px)",
+    overflowY: "auto",
+  },
+  rightPanel: {
+    flex: "1",
+    background: "white",
+    borderRadius: "15px",
+    padding: "20px",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+    display: "flex",
+    flexDirection: "column",
+  },
+  panelTitle: {
+    margin: "0 0 20px 0",
+    color: "#333",
+    fontSize: "18px",
+  },
+  filterSection: {
+    marginBottom: "20px",
+    paddingBottom: "15px",
+    borderBottom: "2px solid #f0f0f0",
+  },
+  section: {
+    marginBottom: "20px",
+  },
+  label: {
+    display: "block",
+    marginBottom: "10px",
+    fontWeight: "bold",
+    color: "#555",
+    fontSize: "14px",
+  },
+  select: {
+    width: "100%",
+    padding: "10px",
+    borderRadius: "8px",
+    border: "2px solid #ddd",
+    fontSize: "14px",
+  },
+  checkboxGroup: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "10px",
+  },
+  checkboxLabel: {
+    display: "flex",
+    alignItems: "center",
+    padding: "8px 12px",
+    background: "#f8f9fa",
+    borderRadius: "20px",
+    cursor: "pointer",
+    fontSize: "14px",
+  },
+  checkbox: {
+    marginRight: "8px",
+    cursor: "pointer",
+    width: "16px",
+    height: "16px",
+  },
+  batchCard: {
+    padding: "15px",
+    background: "#f8f9fa",
+    borderRadius: "10px",
+    marginBottom: "10px",
+    border: "2px solid #e9ecef",
+  },
+  batchLabel: {
+    display: "flex",
+    alignItems: "center",
+    cursor: "pointer",
+  },
+  batchInfo: {
+    flex: 1,
+    marginLeft: "10px",
+  },
+  batchYear: {
+    fontSize: "16px",
+    color: "#333",
+    display: "block",
+    marginBottom: "5px",
+  },
+  batchStats: {
+    display: "flex",
+    gap: "15px",
+    fontSize: "13px",
+    color: "#666",
+  },
+  onlineIndicator: {
+    color: "#28a745",
+    fontWeight: "bold",
+  },
+  branchTags: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "8px",
+    marginTop: "10px",
+    marginLeft: "30px",
+  },
+  branchTag: {
+    padding: "4px 10px",
+    background: "#e7f3ff",
+    color: "#0066cc",
+    borderRadius: "12px",
+    fontSize: "12px",
+  },
+  summaryCard: {
+    padding: "15px",
+    background: "#e7f5ff",
+    borderRadius: "10px",
+    marginTop: "20px",
+    border: "2px solid #b3d9ff",
+  },
+  summaryTitle: {
+    margin: "0 0 10px 0",
+    color: "#0066cc",
+  },
+  onlineText: {
+    color: "#28a745",
+    fontWeight: "bold",
+  },
+  textarea: {
+    width: "100%",
+    padding: "15px",
+    borderRadius: "10px",
+    border: "2px solid #ddd",
+    fontSize: "14px",
+    fontFamily: "Arial, sans-serif",
+    resize: "vertical",
+    minHeight: "200px",
+    boxSizing: "border-box",
+    marginBottom: "20px",
+  },
+  sendButton: {
+    padding: "15px",
+    background: "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+    color: "white",
+    border: "none",
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontSize: "16px",
+    fontWeight: "bold",
+    transition: "transform 0.2s",
+  },
+  infoBox: {
+    marginTop: "20px",
+    padding: "15px",
+    background: "#fff3cd",
+    borderRadius: "10px",
+    fontSize: "13px",
+    color: "#856404",
+  },
+  infoList: {
+    margin: "10px 0 0 0",
+    paddingLeft: "20px",
+  },
+};
+
+export default AdminChat;

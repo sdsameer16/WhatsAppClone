@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FCM Token Test</title>
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+        import { getMessaging, getToken } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDoRVuByteElV-7McGuCu1k28Jigp4XO8g",
+            authDomain: "chtting-fa0db.firebaseapp.com",
+            projectId: "chtting-fa0db",
+            storageBucket: "chtting-fa0db.firebasestorage.app",
+            messagingSenderId: "638820938018",
+            appId: "1:638820938018:web:c8a54ace46c499be6cf57b"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const messaging = getMessaging(app);
+
+        window.testFCM = async function() {
+            const output = document.getElementById('output');
+            output.innerHTML = '🔍 Checking notification permission...<br>';
+
+            try {
+                // Check current permission
+                output.innerHTML += `Current permission: ${Notification.permission}<br><br>`;
+
+                if (Notification.permission === 'default') {
+                    output.innerHTML += '📝 Requesting permission...<br>';
+                    const permission = await Notification.requestPermission();
+                    output.innerHTML += `Permission result: ${permission}<br><br>`;
+                }
+
+                if (Notification.permission === 'granted') {
+                    output.innerHTML += '✅ Permission granted! Getting token...<br>';
+                    
+                    const token = await getToken(messaging, {
+                        vapidKey: 'BC1GODYUCX5Xh2gd18vv4NeL84eJ1HYqURICBOqbRmRQSpoQsE3ieHRSKVvZzFQzZLZvKITr6Jmsggck7akPNTg'
+                    });
+
+                    if (token) {
+                        output.innerHTML += `<br>✅ FCM Token received!<br><br>`;
+                        output.innerHTML += `<textarea style="width:100%; height:100px">${token}</textarea><br><br>`;
+                        
+                        // Try to save to backend
+                        output.innerHTML += '📤 Saving token to backend...<br>';
+                        
+                        const response = await fetch('https://whatsappclone-1-1r7l.onrender.com/api/fcm-token', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                studentId: '4333', // Test student
+                                fcmToken: token
+                            })
+                        });
+
+                        const result = await response.json();
+                        
+                        if (response.ok) {
+                            output.innerHTML += `✅ Token saved to backend!<br>`;
+                            output.innerHTML += `Response: ${JSON.stringify(result)}<br>`;
+                        } else {
+                            output.innerHTML += `❌ Failed to save token<br>`;
+                            output.innerHTML += `Error: ${JSON.stringify(result)}<br>`;
+                        }
+                    } else {
+                        output.innerHTML += '❌ No token received<br>';
+                    }
+                } else {
+                    output.innerHTML += '❌ Permission denied<br>';
+                }
+            } catch (error) {
+                output.innerHTML += `<br>❌ Error: ${error.message}<br>`;
+                console.error(error);
+            }
+        }
+
+        // Check if service worker is registered
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(regs => {
+                document.getElementById('sw-status').innerHTML = 
+                    regs.length > 0 
+                    ? `✅ Service Worker registered (${regs.length})`
+                    : '❌ No Service Worker registered';
+            });
+        }
+    </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 18px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        #output {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 5px;
+            font-family: monospace;
+        }
+        #sw-status {
+            padding: 10px;
+            margin: 10px 0;
+            background: #e3f2fd;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔔 FCM Token Test</h1>
+    <p>This page tests if Firebase Cloud Messaging token can be generated and saved.</p>
+    
+    <div id="sw-status">Checking service worker...</div>
+    
+    <button onclick="testFCM()">🚀 Test FCM Token Generation</button>
+    
+    <div id="output"></div>
+</body>
+</html>

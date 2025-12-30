@@ -1,0 +1,757 @@
+import React, { useState, useEffect } from "react";
+import { io } from "socket.io-client";
+import axios from "axios";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+
+const API_URL = "https://whatsappclone-1-1r7l.onrender.com";
+let socket = null;
+
+const AdminChat = () => {
+  const [currentView, setCurrentView] = useState("login"); // login, chat
+  const [adminId, setAdminId] = useState("");
+  const [password, setPassword] = useState("");
+  const [admin, setAdmin] = useState(null);
+  
+  // Filters and data
+  const [batches, setBatches] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [sections, setSections] = useState([]);
+  const [students, setStudents] = useState([]);
+  
+  // Selection state
+  const [selectedBatches, setSelectedBatches] = useState([]);
+  const [selectedBranches, setSelectedBranches] = useState([]);
+  const [selectedSection, setSelectedSection] = useState("");
+  
+  // Message state
+  const [message, setMessage] = useState("");
+  const [uploadFile, setUploadFile] = useState(null);
+  const [showStudentList, setShowStudentList] = useState(true);
+  
+  useEffect(() => {
+    // Check if admin is already logged in
+    const token = localStorage.getItem("adminToken");
+    const savedAdmin = localStorage.getItem("admin");
+    
+    if (token && savedAdmin) {
+      setAdmin(JSON.parse(savedAdmin));
+      setCurrentView("chat");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (admin && currentView === "chat") {
+      // Initialize socket connection
+      socket = io(API_URL);
+      socket.emit("registerAdmin");
+
+      // Load initial data
+      loadBatchesAndBranches();
+      loadSections();
+      loadStudents();
+
+      // Set up interval to refresh student list every 10 seconds
+      const interval = setInterval(() => {
+        loadStudents();
+      }, 10000);
+
+      return () => {
+        if (socket) {
+          socket.disconnect();
+        }
+        clearInterval(interval);
+      };
+    }
+  }, [admin, currentView, selectedBatches, selectedBranches, selectedSection]);
+
+  const loadBatchesAndBranches = async () => {
+    try {
+      const [batchesRes, branchesRes] = await Promise.all([
+        axios.get(`${API_URL}/api/batches`),
+        axios.get(`${API_URL}/api/branches`),
+      ]);
+      
+      setBatches(batchesRes.data);
+      setBranches(branchesRes.data);
+    } catch (error) {
+      console.error("Error loading data:", error);
+      toast.error("Failed to load batches and branches");
+    }
+  };
+
+  const loadSections = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/sections`);
+      setSections(response.data);
+    } catch (error) {
+      console.error("Error loading sections:", error);
+    }
+  };
+
+  const loadStudents = async () => {
+    if (selectedBatches.length === 0 && selectedBranches.length === 0 && !selectedSection) {
+      setStudents([]);
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams();
+      if (selectedBatches.length > 0) params.append("batches", selectedBatches.join(","));
+      if (selectedBranches.length > 0) params.append("branches", selectedBranches.join(","));
+      if (selectedSection) params.append("section", selectedSection);
+
+      const response = await axios.get(`${API_URL}/api/students?${params}`);
+      setStudents(response.data);
+    } catch (error) {
+      console.error("Error loading students:", error);
+    }
+  };
+
+  const handleLogin = async () => {
+    if (!adminId.trim() || !password.trim()) {
+      toast.error("Please enter Admin ID and password");
+      return;
+    }
+
+    try {
+      const response = await axios.post(`${API_URL}/api/admin/login`, {
+        adminId,
+        password,
+      });
+
+      if (response.data.success) {
+        localStorage.setItem("adminToken", response.data.token);
+        localStorage.setItem("admin", JSON.stringify(response.data.admin));
+        setAdmin(response.data.admin);
+        setCurrentView("chat");
+        toast.success("Login successful!");
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.error || "Login failed");
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("adminToken");
+    localStorage.removeItem("admin");
+    setAdmin(null);
+    setCurrentView("login");
+    if (socket) {
+      socket.disconnect();
+    }
+    toast.info("Logged out successfully");
+  };
+
+  const toggleBatch = (batch) => {
+    setSelectedBatches(prev =>
+      prev.includes(batch) ? prev.filter(b => b !== batch) : [...prev, batch]
+    );
+  };
+
+  const toggleBranch = (branch) => {
+    setSelectedBranches(prev =>
+      prev.includes(branch) ? prev.filter(b => b !== branch) : [...prev, branch]
+    );
+  };
+
+  const sendBatchMessage = () => {
+    if (!message.trim()) {
+      toast.error("Please enter a message");
+      return;
+    }
+
+    if (selectedBatches.length === 0) {
+      toast.error("Please select at least one batch");
+      return;
+    }
+
+    if (selectedBranches.length === 0) {
+      toast.error("Please select at least one branch");
+      return;
+    }
+
+    socket.emit("sendBatchMessage", {
+      batches: selectedBatches,
+      branches: selectedBranches,
+      section: selectedSection || undefined,
+      message,
+      senderName: admin.name,
+    });
+
+    toast.info("Sending message...");
+    setMessage("");
+  };
+
+  const handleFileUpload = async () => {
+    if (!uploadFile) {
+      toast.error("Please select a file");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", uploadFile);
+
+    try {
+      const response = await axios.post(`${API_URL}/api/upload-sections`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      if (response.data.success) {
+        toast.success(`✅ ${response.data.message}\nUpdated: ${response.data.stats.updated}, Not Found: ${response.data.stats.notFound}`);
+        setUploadFile(null);
+        loadSections();
+        loadStudents();
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.error || "Upload failed");
+    }
+  };
+
+  // ==================== LOGIN VIEW ====================
+  if (currentView === "login") {
+    return (
+      <div style={styles.container}>
+        <div style={styles.formCard}>
+          <h2 style={styles.title}>👨‍💼 HOD Login</h2>
+          <p style={styles.subtitle}>College Batch Messaging System</p>
+
+          <input
+            type="text"
+            value={adminId}
+            onChange={(e) => setAdminId(e.target.value)}
+            placeholder="Admin ID"
+            style={styles.input}
+            onKeyPress={(e) => e.key === "Enter" && handleLogin()}
+          />
+
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            style={styles.input}
+            onKeyPress={(e) => e.key === "Enter" && handleLogin()}
+          />
+
+          <button onClick={handleLogin} style={styles.primaryButton}>
+            Login as HOD
+          </button>
+        </div>
+        <ToastContainer position="bottom-right" />
+      </div>
+    );
+  }
+
+  // ==================== ADMIN DASHBOARD ====================
+  const onlineStudents = students.filter(s => s.isOnline);
+  const offlineStudents = students.filter(s => !s.isOnline);
+
+  return (
+    <div style={styles.dashboardContainer}>
+      <div style={styles.header}>
+        <div>
+          <h2 style={styles.headerTitle}>📢 HOD Dashboard</h2>
+          <p style={styles.headerSubtitle}>
+            {admin.name} • {admin.role} • {admin.department}
+          </p>
+        </div>
+        <button onClick={handleLogout} style={styles.logoutButton}>
+          Logout
+        </button>
+      </div>
+
+      <div style={styles.mainContent}>
+        {/* LEFT PANEL - Filters & Student List */}
+        <div style={styles.leftPanel}>
+          <h3 style={styles.panelTitle}>Select Target Audience</h3>
+
+          {/* Branch Selection */}
+          <div style={styles.section}>
+            <label style={styles.label}>Branches:</label>
+            <div style={styles.checkboxGroup}>
+              {branches.map(branch => (
+                <label key={branch} style={styles.checkboxLabel}>
+                  <input
+                    type="checkbox"
+                    checked={selectedBranches.includes(branch)}
+                    onChange={() => toggleBranch(branch)}
+                    style={styles.checkbox}
+                  />
+                  {branch}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Batch Selection */}
+          <div style={styles.section}>
+            <label style={styles.label}>Batches:</label>
+            {[...new Set(batches.map(b => b.batch))].sort().reverse().map(year => (
+              <label key={year} style={styles.batchLabel}>
+                <input
+                  type="checkbox"
+                  checked={selectedBatches.includes(year)}
+                  onChange={() => toggleBatch(year)}
+                  style={styles.checkbox}
+                />
+                <strong>{year}</strong>
+              </label>
+            ))}
+          </div>
+
+          {/* Section Selection */}
+          <div style={styles.section}>
+            <label style={styles.label}>Section (Optional):</label>
+            <select
+              value={selectedSection}
+              onChange={(e) => setSelectedSection(e.target.value)}
+              style={styles.select}
+            >
+              <option value="">All Sections</option>
+              {sections.map(section => (
+                <option key={section} value={section}>{section}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Student List Toggle */}
+          <button
+            onClick={() => setShowStudentList(!showStudentList)}
+            style={styles.toggleButton}
+          >
+            {showStudentList ? "Hide" : "Show"} Student List ({students.length})
+          </button>
+
+          {/* Student List */}
+          {showStudentList && students.length > 0 && (
+            <div style={styles.studentListContainer}>
+              <div style={styles.studentStats}>
+                <span style={styles.onlineIndicator}>🟢 Online: {onlineStudents.length}</span>
+                <span style={styles.offlineIndicator}>⚫ Offline: {offlineStudents.length}</span>
+              </div>
+
+              {onlineStudents.length > 0 && (
+                <div style={styles.studentGroup}>
+                  <h4 style={styles.groupTitle}>🟢 Online Students</h4>
+                  {onlineStudents.map(student => (
+                    <div key={student.studentId} style={styles.studentCard}>
+                      <div>
+                        <strong>{student.name}</strong>
+                        <div style={styles.studentDetails}>
+                          {student.studentId} • {student.mobileNumber}
+                        </div>
+                        <div style={styles.studentDetails}>
+                          {student.branch} • Batch: {student.batch}
+                          {student.section && ` • Sec: ${student.section}`}
+                        </div>
+                      </div>
+                      <span style={styles.statusBadgeOnline}>Online</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {offlineStudents.length > 0 && (
+                <div style={styles.studentGroup}>
+                  <h4 style={styles.groupTitle}>⚫ Offline Students</h4>
+                  {offlineStudents.map(student => (
+                    <div key={student.studentId} style={styles.studentCard}>
+                      <div>
+                        <strong>{student.name}</strong>
+                        <div style={styles.studentDetails}>
+                          {student.studentId} • {student.mobileNumber}
+                        </div>
+                        <div style={styles.studentDetails}>
+                          {student.branch} • Batch: {student.batch}
+                          {student.section && ` • Sec: ${student.section}`}
+                        </div>
+                        <div style={styles.lastSeen}>
+                          Last seen: {new Date(student.lastSeen).toLocaleString()}
+                        </div>
+                      </div>
+                      <span style={styles.statusBadgeOffline}>Offline</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT PANEL - Message Composer & Section Upload */}
+        <div style={styles.rightPanel}>
+          <h3 style={styles.panelTitle}>Compose Message</h3>
+
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Type your message to students here..."
+            style={styles.textarea}
+            rows={8}
+          />
+
+          <button
+            onClick={sendBatchMessage}
+            style={{
+              ...styles.sendButton,
+              opacity: (message.trim() && selectedBatches.length > 0 && selectedBranches.length > 0) ? 1 : 0.5,
+            }}
+            disabled={!message.trim() || selectedBatches.length === 0 || selectedBranches.length === 0}
+          >
+            📤 Send to {students.length} Students ({onlineStudents.length} online)
+          </button>
+
+          <div style={styles.divider}></div>
+
+          <h3 style={styles.panelTitle}>Upload Section Assignments</h3>
+          <p style={styles.uploadInfo}>
+            Upload Excel/CSV file with columns: <strong>studentId</strong> (or <strong>mobileNumber</strong>) and <strong>section</strong>
+          </p>
+
+          <input
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            onChange={(e) => setUploadFile(e.target.files[0])}
+            style={styles.fileInput}
+          />
+
+          {uploadFile && (
+            <div style={styles.filePreview}>
+              📄 {uploadFile.name}
+              <button onClick={() => setUploadFile(null)} style={styles.clearButton}>×</button>
+            </div>
+          )}
+
+          <button
+            onClick={handleFileUpload}
+            style={{
+              ...styles.uploadButton,
+              opacity: uploadFile ? 1 : 0.5,
+            }}
+            disabled={!uploadFile}
+          >
+            📤 Upload Sections
+          </button>
+        </div>
+      </div>
+
+      <ToastContainer position="bottom-right" />
+    </div>
+  );
+};
+
+// ==================== STYLES ====================
+const styles = {
+  container: {
+    minHeight: "100vh",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    background: "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+    fontFamily: "Arial, sans-serif",
+    padding: "20px",
+  },
+  formCard: {
+    background: "white",
+    padding: "40px",
+    borderRadius: "20px",
+    boxShadow: "0 10px 40px rgba(0,0,0,0.2)",
+    width: "100%",
+    maxWidth: "400px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "15px",
+  },
+  title: {
+    margin: "0 0 10px 0",
+    color: "#333",
+    textAlign: "center",
+  },
+  subtitle: {
+    margin: "0 0 20px 0",
+    color: "#666",
+    fontSize: "14px",
+    textAlign: "center",
+  },
+  input: {
+    width: "100%",
+    padding: "12px",
+    borderRadius: "10px",
+    border: "2px solid #ddd",
+    fontSize: "14px",
+    boxSizing: "border-box",
+  },
+  primaryButton: {
+    width: "100%",
+    padding: "12px",
+    backgroundColor: "#f5576c",
+    color: "white",
+    border: "none",
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontSize: "16px",
+    fontWeight: "bold",
+    marginTop: "10px",
+  },
+  dashboardContainer: {
+    width: "100%",
+    minHeight: "100vh",
+    background: "#f5f7fa",
+    fontFamily: "Arial, sans-serif",
+  },
+  header: {
+    background: "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+    color: "white",
+    padding: "20px 30px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  headerTitle: {
+    margin: "0 0 5px 0",
+  },
+  headerSubtitle: {
+    margin: 0,
+    fontSize: "14px",
+    opacity: 0.9,
+  },
+  logoutButton: {
+    padding: "10px 20px",
+    background: "rgba(255,255,255,0.2)",
+    color: "white",
+    border: "1px solid white",
+    borderRadius: "20px",
+    cursor: "pointer",
+    fontSize: "14px",
+  },
+  mainContent: {
+    display: "flex",
+    gap: "20px",
+    padding: "20px",
+    maxWidth: "1600px",
+    margin: "0 auto",
+  },
+  leftPanel: {
+    flex: "1",
+    background: "white",
+    borderRadius: "15px",
+    padding: "20px",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+    maxHeight: "calc(100vh - 140px)",
+    overflowY: "auto",
+  },
+  rightPanel: {
+    flex: "1",
+    background: "white",
+    borderRadius: "15px",
+    padding: "20px",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+    display: "flex",
+    flexDirection: "column",
+  },
+  panelTitle: {
+    margin: "0 0 20px 0",
+    color: "#333",
+    fontSize: "18px",
+  },
+  section: {
+    marginBottom: "20px",
+    paddingBottom: "15px",
+    borderBottom: "2px solid #f0f0f0",
+  },
+  label: {
+    display: "block",
+    marginBottom: "10px",
+    fontWeight: "bold",
+    color: "#555",
+    fontSize: "14px",
+  },
+  checkboxGroup: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "10px",
+  },
+  checkboxLabel: {
+    display: "flex",
+    alignItems: "center",
+    padding: "8px 12px",
+    background: "#f8f9fa",
+    borderRadius: "20px",
+    cursor: "pointer",
+    fontSize: "14px",
+  },
+  batchLabel: {
+    display: "flex",
+    alignItems: "center",
+    padding: "10px",
+    background: "#f8f9fa",
+    borderRadius: "8px",
+    marginBottom: "8px",
+    cursor: "pointer",
+  },
+  checkbox: {
+    marginRight: "8px",
+    cursor: "pointer",
+    width: "16px",
+    height: "16px",
+  },
+  select: {
+    width: "100%",
+    padding: "10px",
+    borderRadius: "8px",
+    border: "2px solid #ddd",
+    fontSize: "14px",
+  },
+  toggleButton: {
+    width: "100%",
+    padding: "10px",
+    background: "#007bff",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontSize: "14px",
+    marginBottom: "15px",
+  },
+  studentListContainer: {
+    marginTop: "15px",
+  },
+  studentStats: {
+    display: "flex",
+    gap: "20px",
+    marginBottom: "15px",
+    padding: "10px",
+    background: "#f8f9fa",
+    borderRadius: "8px",
+    fontSize: "14px",
+  },
+  onlineIndicator: {
+    color: "#28a745",
+    fontWeight: "bold",
+  },
+  offlineIndicator: {
+    color: "#666",
+    fontWeight: "bold",
+  },
+  studentGroup: {
+    marginBottom: "20px",
+  },
+  groupTitle: {
+    margin: "0 0 10px 0",
+    fontSize: "14px",
+    color: "#666",
+  },
+  studentCard: {
+    padding: "10px",
+    background: "#f8f9fa",
+    borderRadius: "8px",
+    marginBottom: "8px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    fontSize: "13px",
+  },
+  studentDetails: {
+    color: "#666",
+    fontSize: "12px",
+    marginTop: "3px",
+  },
+  lastSeen: {
+    color: "#999",
+    fontSize: "11px",
+    marginTop: "3px",
+    fontStyle: "italic",
+  },
+  statusBadgeOnline: {
+    padding: "4px 8px",
+    background: "#d4edda",
+    color: "#155724",
+    borderRadius: "12px",
+    fontSize: "11px",
+    fontWeight: "bold",
+  },
+  statusBadgeOffline: {
+    padding: "4px 8px",
+    background: "#e0e0e0",
+    color: "#666",
+    borderRadius: "12px",
+    fontSize: "11px",
+  },
+  textarea: {
+    width: "100%",
+    padding: "15px",
+    borderRadius: "10px",
+    border: "2px solid #ddd",
+    fontSize: "14px",
+    fontFamily: "Arial, sans-serif",
+    resize: "vertical",
+    minHeight: "150px",
+    boxSizing: "border-box",
+    marginBottom: "15px",
+  },
+  sendButton: {
+    padding: "15px",
+    background: "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+    color: "white",
+    border: "none",
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontSize: "16px",
+    fontWeight: "bold",
+    marginBottom: "20px",
+  },
+  divider: {
+    height: "2px",
+    background: "#e0e0e0",
+    margin: "20px 0",
+  },
+  uploadInfo: {
+    fontSize: "13px",
+    color: "#666",
+    marginBottom: "15px",
+    padding: "10px",
+    background: "#fff3cd",
+    borderRadius: "8px",
+  },
+  fileInput: {
+    width: "100%",
+    padding: "10px",
+    border: "2px dashed #ddd",
+    borderRadius: "8px",
+    cursor: "pointer",
+    marginBottom: "10px",
+  },
+  filePreview: {
+    padding: "10px",
+    background: "#e7f3ff",
+    borderRadius: "8px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "10px",
+    fontSize: "14px",
+  },
+  clearButton: {
+    background: "#dc3545",
+    color: "white",
+    border: "none",
+    borderRadius: "50%",
+    width: "24px",
+    height: "24px",
+    cursor: "pointer",
+    fontSize: "16px",
+  },
+  uploadButton: {
+    padding: "12px",
+    background: "#28a745",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontWeight: "bold",
+  },
+};
+
+export default AdminChat;
