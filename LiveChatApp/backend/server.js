@@ -302,11 +302,18 @@ app.post("/api/fcm-token", async (req, res) => {
       console.log(`✅ FCM token registered for student ${studentId} (Total tokens: ${student.fcmTokens.length})`);
       console.log(`   Token: ${fcmToken.substring(0, 30)}...`);
       
-      // Subscribe token to "all_users" topic for broadcast notifications
+      // Subscribe token to topics
       try {
-        const admin = (await import('firebase-admin')).default;
+        // Broadcast topic
         await admin.messaging().subscribeToTopic([fcmToken], 'all_users');
         console.log(`✅ Token subscribed to "all_users" topic`);
+
+        // Targeted branch/batch topic if available
+        if (student.branch && student.batch) {
+          const topic = `branch_${student.branch.toLowerCase().replace(/\s+/g, '_')}_batch_${student.batch}`.toLowerCase();
+          await admin.messaging().subscribeToTopic([fcmToken], topic);
+          console.log(`✅ Token subscribed to topic: ${topic}`);
+        }
       } catch (topicError) {
         console.error(`⚠️  Failed to subscribe to topic:`, topicError.message);
         // Continue even if topic subscription fails
@@ -765,7 +772,7 @@ io.on("connection", (socket) => {
         }
       });
 
-      console.log(`Message sent to topic "all_users" + ${onlineCount} online (socket), ${offlineCount} offline`);
+      console.log(`Message sent to targeted topics (${branches.length * batches.length}) + ${onlineCount} online (socket), ${offlineCount} offline`);
 
       socket.emit("messageSent", {
         success: true,
