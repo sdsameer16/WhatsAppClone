@@ -12,24 +12,43 @@ import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Load service account
-let serviceAccount;
-try {
-  const serviceAccountPath = join(__dirname, 'serviceAccountKey.json');
-  serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
-  
-  // Initialize Firebase Admin
-  if (!admin.apps.length) {
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      databaseURL: `https://${serviceAccount.project_id}.firebaseio.com`
-    });
-    console.log('✅ Firebase Admin SDK initialized successfully');
+// Initialize Firebase Admin (ENV first, then file)
+if (!admin.apps.length) {
+  try {
+    const envProjectId = process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_PROJECT_ID || process.env.GCLOUD_PROJECT;
+    const envClientEmail = process.env.FIREBASE_CLIENT_EMAIL || process.env.GOOGLE_CLIENT_EMAIL;
+    let envPrivateKey = process.env.FIREBASE_PRIVATE_KEY || process.env.GOOGLE_PRIVATE_KEY;
+
+    if (envPrivateKey) {
+      envPrivateKey = envPrivateKey.replace(/\\n/g, '\n');
+    }
+
+    if (envProjectId && envClientEmail && envPrivateKey) {
+      admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId: envProjectId,
+          clientEmail: envClientEmail,
+          privateKey: envPrivateKey,
+        }),
+      });
+      console.log('✅ Firebase Admin initialized from environment variables');
+    } else {
+      // Fallback: attempt to read local serviceAccountKey.json
+      try {
+        const serviceAccountPath = join(__dirname, 'serviceAccountKey.json');
+        const serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount),
+          databaseURL: `https://${serviceAccount.project_id}.firebaseio.com`,
+        });
+        console.log('✅ Firebase Admin initialized from serviceAccountKey.json');
+      } catch (fileErr) {
+        console.warn('⚠️ Firebase Admin not initialized (no ENV creds and no serviceAccountKey.json). Push notifications will be disabled.');
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error initializing Firebase Admin:', error.message);
   }
-} catch (error) {
-  console.error('❌ Error initializing Firebase Admin:', error.message);
-  console.error('Please make sure serviceAccountKey.json exists in the backend directory');
-  process.exit(1);
 }
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -44,8 +63,10 @@ import { initializeFirebase, sendPushNotification, sendBatchNotifications } from
 
 dotenv.config();
 
-// Initialize Firebase
-initializeFirebase();
+// Initialize Firebase only if Admin SDK isn't already initialized
+if (!admin.apps.length) {
+  initializeFirebase();
+}
 
 const app = express();
 app.use(cors());
@@ -587,13 +608,33 @@ app.post("/api/student/fcm-token", async (req, res) => {
   try {
     const { studentId, fcmToken } = req.body;
 
-    await Student.findOneAndUpdate(
-      { studentId },
-      { fcmToken },
-      { new: true }
-    );
+    if (!studentId || !fcmToken) {
+      return res.status(400).json({ error: "Student ID and FCM token are required" });
+    }
 
-    res.json({ success: true });
+    const student = await Student.findOne({ studentId });
+    if (!student) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+
+    // Store token if not already present
+    if (!student.fcmTokens.includes(fcmToken)) {
+      student.fcmTokens.push(fcmToken);
+      await student.save();
+    }
+
+    // Subscribe token to topics
+    try {
+      await admin.messaging().subscribeToTopic([fcmToken], 'all_users');
+      if (student.branch && student.batch) {
+        const topic = `branch_${student.branch.toLowerCase().replace(/\\s+/g, '_')}_batch_${student.batch}`.toLowerCase();
+        await admin.messaging().subscribeToTopic([fcmToken], topic);
+      }
+    } catch (topicErr) {
+      console.warn('Topic subscription failed:', topicErr.message);
+    }
+
+    res.json({ success: true, tokenCount: student.fcmTokens.length });
   } catch (error) {
     console.error("Error updating FCM token:", error);
     res.status(500).json({ error: "Failed to update FCM token" });
@@ -620,18 +661,21 @@ io.on("connection", (socket) => {
     );
 
     if (student) {
-      console.log(`✅ Student ${studentId} is now ONLINE (has ${student.fcmToken ? 1 : 0} FCM tokens)`);
-      
-      // Subscribe to topics based on student's branch and batch
-      if (student.fcmToken && student.branch && student.batch) {
+      const tokenCount = Array.isArray(student.fcmTokens) ? student.fcmTokens.length : 0;
+      console.log(`✅ Student ${studentId} is now ONLINE (has ${tokenCount} FCM token(s))`);
+
+      // Subscribe all tokens to the student's branch/batch topic
+      if (tokenCount > 0 && student.branch && student.batch) {
         try {
           const topic = `branch_${student.branch.toLowerCase().replace(/\s+/g, '_')}_batch_${student.batch}`.toLowerCase();
-          await admin.messaging().subscribeToTopic(student.fcmToken, topic);
-          console.log(`✅ Subscribed ${studentId} to topic: ${topic}`);
+          const tokens = student.fcmTokens;
+          await admin.messaging().subscribeToTopic(tokens, topic);
+          console.log(`✅ Subscribed ${studentId} (${tokens.length} token(s)) to topic: ${topic}`);
         } catch (error) {
           console.error(`❌ Error subscribing to topic:`, error);
         }
       }
+    }
 
     // Notify admin about student count update
     if (adminSocket) {
