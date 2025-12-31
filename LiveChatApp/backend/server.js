@@ -1,6 +1,10 @@
 // ...existing code...
 // ==================== ADMIN SEND NOTICE ROUTE ====================
 // Send notification to Branch and/or Batch topic
+const app = express();
+app.use(cors());
+app.use(express.json());
+
 app.post("/api/send-notice", async (req, res) => {
   try {
     const { branch, batch, title, body } = req.body;
@@ -112,9 +116,7 @@ if (!admin.apps.length) {
   initializeFirebase();
 }
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+
 
 // Configure multer for file uploads
 const upload = multer({ storage: multer.memoryStorage() });
