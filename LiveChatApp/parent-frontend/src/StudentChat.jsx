@@ -1,3 +1,15 @@
+// Function to sync student details with the Android App
+function subscribeStudentToNotices(branch, batch) {
+  if (window.NoticeB_Native) {
+    // Subscribe to Branch topic (e.g., "Branch_CSE")
+    window.NoticeB_Native.subscribeToTopic("Branch_" + branch);
+    // Subscribe to Batch topic (e.g., "Batch_2024")
+    window.NoticeB_Native.subscribeToTopic("Batch_" + batch);
+    console.log("Topics Synced: " + branch + " & " + batch);
+  } else {
+    console.log("Not running in Android App.");
+  }
+}
 import React, { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import axios from "axios";
@@ -37,19 +49,19 @@ const StudentChat = () => {
   useEffect(() => {
     if (student && currentView === "chat") {
       console.log("📱 Student logged in, initializing FCM and topic subscription...");
-      // Subscribe to combined topic (Branch+Batch)
+      // Subscribe to branch and batch topics via Android bridge
       const branch = student.branch?.replace(/\s+/g, "_").toUpperCase();
       const batch = student.batch?.replace(/\s+/g, "_");
-      const combinedTopic = `Branch_${branch}_Batch_${batch}`;
-      // Unsubscribe from previous topic if needed (optional, not tracked here)
-      if (window.cordova && window.cordova.plugins && window.cordova.plugins.notification && window.cordova.plugins.notification.badge) {
-        window.cordova.plugins.notification.badge.subscribe(combinedTopic);
-        console.log(`✅ Subscribed to topic: ${combinedTopic}`);
-      }
+      subscribeStudentToNotices(branch, batch);
       // Request notification permission and register FCM token
       requestNotificationPermission().then(async (fcmToken) => {
         if (fcmToken) {
+          // Show FCM token and topics on app open
+          toast.info(`FCM Token: ${fcmToken}`);
+          toast.info(`Subscribed Branch: ${branch}`);
+          toast.info(`Subscribed Batch: ${batch}`);
           console.log("✅ FCM Token received:", fcmToken.substring(0, 30) + "...");
+          console.log(`Subscribed Branch: ${branch}, Batch: ${batch}`);
           // Send FCM token to backend for topic subscription (if needed)
           try {
             const response = await axios.post(`${API_URL}/api/fcm-token`, {

@@ -1,3 +1,46 @@
+// ==================== ADMIN SEND NOTICE ROUTE ====================
+// Send notification to Branch and/or Batch topic
+app.post("/api/send-notice", async (req, res) => {
+  try {
+    const { branch, batch, title, body } = req.body;
+    if (!title || !body || (!branch && !batch)) {
+      return res.status(400).json({ error: "Title, body, and at least branch or batch are required" });
+    }
+
+    // Build topic(s)
+    let topics = [];
+    if (branch) {
+      const branchTopic = `Branch_${branch.replace(/\s+/g, "_").toUpperCase()}`;
+      topics.push(branchTopic);
+    }
+    if (batch) {
+      const batchTopic = `Batch_${batch.replace(/\s+/g, "_")}`;
+      topics.push(batchTopic);
+    }
+
+    // Send to each topic
+    let results = [];
+    for (const topic of topics) {
+      const message = {
+        data: {
+          title,
+          body,
+          badge: "1"
+        },
+        topic
+      };
+      try {
+        const response = await admin.messaging().send(message);
+        results.push({ topic, success: true, response });
+      } catch (error) {
+        results.push({ topic, success: false, error: error.message });
+      }
+    }
+    res.json({ success: true, results });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 import express from "express";
 import http from "http";
 import { Server } from "socket.io";
