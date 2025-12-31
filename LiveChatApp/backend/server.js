@@ -7,20 +7,18 @@ app.use(express.json());
 
 app.post("/api/send-notice", async (req, res) => {
   try {
-    const { branch, batch, title, body } = req.body;
-    if (!title || !body || (!branch && !batch)) {
-      return res.status(400).json({ error: "Title, body, and at least branch or batch are required" });
+    const { branch, batches, title, body } = req.body;
+    if (!title || !body || (!branch && (!batches || batches.length === 0))) {
+      return res.status(400).json({ error: "Title, body, and at least branch or batches are required" });
     }
 
     // Build topic(s)
     let topics = [];
     if (branch) {
-      const branchTopic = `Branch_${branch.replace(/\s+/g, "_").toUpperCase()}`;
-      topics.push(branchTopic);
+      topics.push(`Branch_${branch}`);
     }
-    if (batch) {
-      const batchTopic = `Batch_${batch.replace(/\s+/g, "_")}`;
-      topics.push(batchTopic);
+    if (batches && Array.isArray(batches)) {
+      batches.forEach(batch => topics.push(`Batch_${batch}`));
     }
 
     // Send to each topic
