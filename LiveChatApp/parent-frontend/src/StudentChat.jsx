@@ -1,11 +1,17 @@
 // Function to sync student details with the Android App
-function subscribeStudentToNotices(branch, batch) {
+function subscribeStudentToNotices(branch, batches) {
   if (window.NoticeB_Native) {
     // Subscribe to Branch topic (e.g., "Branch_CSE")
-    window.NoticeB_Native.subscribeToTopic("Branch_" + branch);
-    // Subscribe to Batch topic (e.g., "Batch_2024")
-    window.NoticeB_Native.subscribeToTopic("Batch_" + batch);
-    console.log("Topics Synced: " + branch + " & " + batch);
+    if (branch) {
+      window.NoticeB_Native.subscribeToTopic("Branch_" + branch);
+    }
+    // Subscribe to each Batch topic (e.g., "Batch_2027-2028")
+    if (batches && Array.isArray(batches)) {
+      batches.forEach(batch => {
+        window.NoticeB_Native.subscribeToTopic("Batch_" + batch);
+      });
+    }
+    console.log("Topics Synced: Branch " + branch + ", Batches: " + (batches || []).join(", "));
   } else {
     console.log("Not running in Android App.");
   }
@@ -49,26 +55,29 @@ const StudentChat = () => {
   useEffect(() => {
     if (student && currentView === "chat") {
       console.log("📱 Student logged in, initializing FCM and topic subscription...");
-      // Subscribe to branch and batch topics via Android bridge
+      // Example: get batches from student.batches or similar property (update as per your data model)
       const branch = student.branch?.replace(/\s+/g, "_").toUpperCase();
-      const batch = student.batch?.replace(/\s+/g, "_");
-      subscribeStudentToNotices(branch, batch);
+      // If you store batches as an array, use it; else, create an array from a single batch
+      const batches = Array.isArray(student.batches)
+        ? student.batches
+        : student.batch ? [student.batch] : [];
+      subscribeStudentToNotices(branch, batches);
       // Request notification permission and register FCM token
       requestNotificationPermission().then(async (fcmToken) => {
         if (fcmToken) {
           // Show FCM token and topics on app open
           toast.info(`FCM Token: ${fcmToken}`);
           toast.info(`Subscribed Branch: ${branch}`);
-          toast.info(`Subscribed Batch: ${batch}`);
+          toast.info(`Subscribed Batches: ${(batches || []).join(", ")}`);
           console.log("✅ FCM Token received:", fcmToken.substring(0, 30) + "...");
-          console.log(`Subscribed Branch: ${branch}, Batch: ${batch}`);
+          console.log(`Subscribed Branch: ${branch}, Batches: ${(batches || []).join(", ")}`);
           // Send FCM token to backend for topic subscription (if needed)
           try {
             const response = await axios.post(`${API_URL}/api/fcm-token`, {
               studentId: student.studentId,
               fcmToken: fcmToken,
               branch: branch,
-              batch: batch
+              batches: batches
             });
             console.log("✅ FCM token registered:", response.data);
           } catch (error) {
