@@ -1,3 +1,22 @@
+  <script>
+    window.addEventListener('noticeb_ready', function() {
+      // 1. Get the current token if you need to save it to your DB
+      var token = window.NoticeB && window.NoticeB.getToken ? window.NoticeB.getToken() : null;
+      if(token) {
+        console.log('FCM Token from Android bridge:', token);
+      }
+      // 2. Subscribe to topics based on student data (replace with dynamic values after login)
+      window.NoticeB && window.NoticeB.subscribe && window.NoticeB.subscribe("Branch_CSE");
+      window.NoticeB && window.NoticeB.subscribe && window.NoticeB.subscribe("Batch_2024");
+      console.log("Android Notification Bridge Ready");
+    });
+    function onUserLogout() {
+      if (window.NoticeB && window.NoticeB.logout) {
+        window.NoticeB.logout();
+        console.log("Android Notification Bridge: User logged out, topics cleared.");
+      }
+    }
+  </script>
 <!doctype html>
 <html lang="en">
   <head>
