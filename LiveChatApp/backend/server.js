@@ -354,7 +354,9 @@ app.post("/api/fcm-token", async (req, res) => {
 
       // Subscribe token to combined topic
       try {
-        const combinedTopic = `Branch_${branch.replace(/\s+/g, "_").toUpperCase()}_Batch_${resolvedBatch.replace(/\s+/g, "_")}`;
+        const normalizedBranch = branch.replace(/\s+/g, "_").toLowerCase();
+        const normalizedBatch = resolvedBatch.replace(/\s+/g, "_").toLowerCase();
+        const combinedTopic = `branch_${normalizedBranch}_batch_${normalizedBatch}`;
         await admin.messaging().subscribeToTopic([fcmToken], combinedTopic);
         console.log(`✅ Token subscribed to topic: ${combinedTopic}`);
       } catch (topicError) {
@@ -677,7 +679,9 @@ app.post("/api/student/fcm-token", async (req, res) => {
     try {
       await admin.messaging().subscribeToTopic([fcmToken], 'all_users');
       if (student.branch && student.batch) {
-        const topic = `branch_${student.branch.toLowerCase().replace(/\\s+/g, '_')}_batch_${student.batch}`.toLowerCase();
+        const normalizedBranch = student.branch.toLowerCase().replace(/\s+/g, '_');
+        const normalizedBatch = student.batch.toLowerCase().replace(/\s+/g, '_');
+        const topic = `branch_${normalizedBranch}_batch_${normalizedBatch}`;
         await admin.messaging().subscribeToTopic([fcmToken], topic);
       }
     } catch (topicErr) {
@@ -717,7 +721,9 @@ io.on("connection", (socket) => {
       // Subscribe all tokens to the student's branch/batch topic
       if (tokenCount > 0 && student.branch && student.batch) {
         try {
-          const topic = `branch_${student.branch.toLowerCase().replace(/\s+/g, '_')}_batch_${student.batch}`.toLowerCase();
+          const normalizedBranch = student.branch.toLowerCase().replace(/\s+/g, '_');
+          const normalizedBatch = student.batch.toLowerCase().replace(/\s+/g, '_');
+          const topic = `branch_${normalizedBranch}_batch_${normalizedBatch}`;
           const tokens = student.fcmTokens;
           await admin.messaging().subscribeToTopic(tokens, topic);
           console.log(`✅ Subscribed ${studentId} (${tokens.length} token(s)) to topic: ${topic}`);

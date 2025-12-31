@@ -31,6 +31,45 @@ import CSELoader from "./CSELoader";
 const API_URL = "https://whatsappclone-1-1r7l.onrender.com";
 let socket = null;
 
+// Register device for push (FCM) using student data
+async function registerForPush(student) {
+  if (!student) return;
+
+  console.log("📱 Initializing FCM for student:", student.studentId);
+
+  // Normalize branch/batches
+  const branch = student.branch?.replace(/\s+/g, "_").toUpperCase();
+  const batches = Array.isArray(student.batches)
+    ? student.batches
+    : student.batch
+      ? [student.batch]
+      : (student.startYear && student.endYear)
+        ? [`${student.startYear}-${student.endYear}`]
+        : [];
+
+  // Android bridge topic subscribe (if present)
+  subscribeStudentToNotices(branch, batches);
+
+  // Request token and send to backend
+  try {
+    const fcmToken = await requestNotificationPermission();
+    if (fcmToken) {
+      console.log("✅ FCM Token received:", fcmToken.substring(0, 30) + "...");
+      const response = await axios.post(`${API_URL}/api/fcm-token`, {
+        studentId: student.studentId,
+        fcmToken,
+        branch,
+        batches,
+      });
+      console.log("✅ FCM token registered:", response.data);
+    } else {
+      console.log("⚠️ No FCM token received - notifications will not work");
+    }
+  } catch (error) {
+    console.error("❌ Failed to register FCM token:", error.response?.data || error.message);
+  }
+}
+
 const StudentChat = () => {
   const [currentView, setCurrentView] = useState("login"); // login, register, chat
   const [studentId, setStudentId] = useState("");
@@ -58,46 +97,7 @@ const StudentChat = () => {
 
   useEffect(() => {
     if (student && currentView === "chat") {
-      console.log("📱 Student logged in, initializing FCM and topic subscription...");
-      // Example: get batches from student.batches or similar property (update as per your data model)
-      const branch = student.branch?.replace(/\s+/g, "_").toUpperCase();
-      // If you store batches as an array, use it; else, create an array from a single batch
-      const batches = Array.isArray(student.batches)
-        ? student.batches
-        : student.batch ? [student.batch] : [];
-      subscribeStudentToNotices(branch, batches);
-      // Request notification permission and register FCM token
-      requestNotificationPermission().then(async (fcmToken) => {
-        if (fcmToken) {
-          // Show FCM token and topics on app open
-          toast.info(`FCM Token: ${fcmToken}`);
-          toast.info(`Subscribed Branch: ${branch}`);
-          toast.info(`Subscribed Batches: ${(batches || []).join(", ")}`);
-          console.log("✅ FCM Token received:", fcmToken.substring(0, 30) + "...");
-          console.log(`Subscribed Branch: ${branch}, Batches: ${(batches || []).join(", ")}`);
-          // Send FCM token to backend for topic subscription (if needed)
-          try {
-            const response = await axios.post(`${API_URL}/api/fcm-token`, {
-              studentId: student.studentId,
-              fcmToken: fcmToken,
-              branch: branch,
-              batches: batches
-            });
-            console.log("✅ FCM token registered:", response.data);
-          } catch (error) {
-            console.error("❌ Failed to register FCM token:", error.response?.data || error.message);
-            toast.error("Failed to enable notifications. Please refresh the page.");
-          }
-        } else {
-          console.log("⚠️ No FCM token received - notifications will not work");
-          console.log("Possible reasons:");
-          console.log("1. Notification permission denied");
-          console.log("2. Browser doesn't support notifications");
-          console.log("3. Service worker not registered");
-        }
-      }).catch(err => {
-        console.error("❌ Error in requestNotificationPermission:", err);
-      });
+      registerForPush(student);
 
       // Listen for foreground messages
       onMessageListener().then((payload) => {
