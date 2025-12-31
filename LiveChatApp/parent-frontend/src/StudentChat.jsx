@@ -1,20 +1,24 @@
 // Function to sync student details with the Android App
 function subscribeStudentToNotices(branch, batches) {
-  if (window.NoticeB_Native) {
-    // Subscribe to Branch topic (e.g., "Branch_CSE")
-    if (branch) {
-      window.NoticeB_Native.subscribeToTopic("Branch_" + branch);
-    }
-    // Subscribe to each Batch topic (e.g., "Batch_2027-2028")
-    if (batches && Array.isArray(batches)) {
-      batches.forEach(batch => {
-        window.NoticeB_Native.subscribeToTopic("Batch_" + batch);
-      });
-    }
-    console.log("Topics Synced: Branch " + branch + ", Batches: " + (batches || []).join(", "));
-  } else {
-    console.log("Not running in Android App.");
+  const bridge = window.NoticeB || window.NoticeB_Native;
+  if (!bridge) {
+    console.log("NoticeB bridge not found! Are you running inside the Android App?");
+    return;
   }
+
+  // Subscribe to Branch topic (e.g., "Branch_CSE")
+  if (branch) {
+    bridge.subscribe("Branch_" + branch);
+  }
+
+  // Subscribe to each Batch topic (e.g., "Batch_2027-2028")
+  if (batches && Array.isArray(batches)) {
+    batches.forEach(batch => {
+      bridge.subscribe("Batch_" + batch);
+    });
+  }
+
+  console.log("Topics Synced: Branch " + branch + ", Batches: " + (batches || []).join(", "));
 }
 import React, { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
