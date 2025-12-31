@@ -279,13 +279,13 @@ app.post("/api/admin/login", async (req, res) => {
 // Register FCM token for push notifications
 app.post("/api/fcm-token", async (req, res) => {
   try {
-    const { studentId, fcmToken } = req.body;
+    const { studentId, fcmToken, branch, batch } = req.body;
 
     console.log(`📱 FCM token registration request from student: ${studentId}`);
 
-    if (!studentId || !fcmToken) {
-      console.log("❌ Missing studentId or fcmToken");
-      return res.status(400).json({ error: "Student ID and FCM token are required" });
+    if (!studentId || !fcmToken || !branch || !batch) {
+      console.log("❌ Missing studentId, fcmToken, branch, or batch");
+      return res.status(400).json({ error: "Student ID, FCM token, branch, and batch are required" });
     }
 
     // Find student and add token if not already present
@@ -298,22 +298,18 @@ app.post("/api/fcm-token", async (req, res) => {
     // Add token only if it doesn't exist
     if (!student.fcmTokens.includes(fcmToken)) {
       student.fcmTokens.push(fcmToken);
+      // Update branch and batch if changed
+      student.branch = branch;
+      student.batch = batch;
       await student.save();
       console.log(`✅ FCM token registered for student ${studentId} (Total tokens: ${student.fcmTokens.length})`);
       console.log(`   Token: ${fcmToken.substring(0, 30)}...`);
-      
-      // Subscribe token to topics
-      try {
-        // Broadcast topic
-        await admin.messaging().subscribeToTopic([fcmToken], 'all_users');
-        console.log(`✅ Token subscribed to "all_users" topic`);
 
-        // Targeted branch/batch topic if available
-        if (student.branch && student.batch) {
-          const topic = `branch_${student.branch.toLowerCase().replace(/\s+/g, '_')}_batch_${student.batch}`.toLowerCase();
-          await admin.messaging().subscribeToTopic([fcmToken], topic);
-          console.log(`✅ Token subscribed to topic: ${topic}`);
-        }
+      // Subscribe token to combined topic
+      try {
+        const combinedTopic = `Branch_${branch.replace(/\s+/g, "_").toUpperCase()}_Batch_${batch.replace(/\s+/g, "_")}`;
+        await admin.messaging().subscribeToTopic([fcmToken], combinedTopic);
+        console.log(`✅ Token subscribed to topic: ${combinedTopic}`);
       } catch (topicError) {
         console.error(`⚠️  Failed to subscribe to topic:`, topicError.message);
         // Continue even if topic subscription fails
@@ -324,7 +320,7 @@ app.post("/api/fcm-token", async (req, res) => {
 
     res.json({ 
       success: true, 
-      message: "FCM token registered and subscribed to all_users topic",
+      message: "FCM token registered and subscribed to combined topic",
       tokenCount: student.fcmTokens.length 
     });
   } catch (error) {

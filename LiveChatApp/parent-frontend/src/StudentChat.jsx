@@ -36,24 +36,31 @@ const StudentChat = () => {
 
   useEffect(() => {
     if (student && currentView === "chat") {
-      console.log("📱 Student logged in, initializing FCM...");
-      
+      console.log("📱 Student logged in, initializing FCM and topic subscription...");
+      // Subscribe to combined topic (Branch+Batch)
+      const branch = student.branch?.replace(/\s+/g, "_").toUpperCase();
+      const batch = student.batch?.replace(/\s+/g, "_");
+      const combinedTopic = `Branch_${branch}_Batch_${batch}`;
+      // Unsubscribe from previous topic if needed (optional, not tracked here)
+      if (window.cordova && window.cordova.plugins && window.cordova.plugins.notification && window.cordova.plugins.notification.badge) {
+        window.cordova.plugins.notification.badge.subscribe(combinedTopic);
+        console.log(`✅ Subscribed to topic: ${combinedTopic}`);
+      }
       // Request notification permission and register FCM token
       requestNotificationPermission().then(async (fcmToken) => {
         if (fcmToken) {
           console.log("✅ FCM Token received:", fcmToken.substring(0, 30) + "...");
-          
-          // Send FCM token to backend to subscribe to "all_users" topic
+          // Send FCM token to backend for topic subscription (if needed)
           try {
-            console.log("📤 Sending FCM token to backend for topic subscription...");
             const response = await axios.post(`${API_URL}/api/fcm-token`, {
               studentId: student.studentId,
               fcmToken: fcmToken,
+              branch: branch,
+              batch: batch
             });
-            console.log("✅ FCM token registered and subscribed to 'all_users' topic:", response.data);
+            console.log("✅ FCM token registered:", response.data);
           } catch (error) {
             console.error("❌ Failed to register FCM token:", error.response?.data || error.message);
-            // Show error to user
             toast.error("Failed to enable notifications. Please refresh the page.");
           }
         } else {
