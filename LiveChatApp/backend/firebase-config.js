@@ -16,12 +16,11 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-let firebaseInitialized = false;
+// If Firebase Admin was already initialized elsewhere (e.g., server.js), reflect that
+let firebaseInitialized = admin.apps.length > 0;
 
 export const initializeFirebase = () => {
-  if (firebaseInitialized) {
-    return;
-  }
+  if (firebaseInitialized) return;
 
   try {
     // Option 1: Using service account JSON file
@@ -34,6 +33,12 @@ export const initializeFirebase = () => {
     */
 
     // Option 2: Using environment variables (recommended for production)
+    if (admin.apps.length > 0) {
+      firebaseInitialized = true;
+      console.log('ℹ️ Firebase already initialized (existing app).');
+      return;
+    }
+
     if (process.env.FIREBASE_PROJECT_ID) {
       admin.initializeApp({
         credential: admin.credential.cert({
