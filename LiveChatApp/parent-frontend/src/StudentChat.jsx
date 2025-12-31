@@ -98,6 +98,27 @@ const StudentChat = () => {
       // Listen for foreground messages
       onMessageListener().then((payload) => {
         console.log("📬 Foreground notification received:", payload);
+        // Show system banner notification while app is open
+        try {
+          const { title, body } = payload.notification || {};
+          if (title && body && "Notification" in window && Notification.permission === "granted") {
+            const options = {
+              body,
+              icon: "/logo192.png",
+              badge: "/logo192.png",
+              vibrate: [200, 100, 200],
+              data: payload.data || {},
+            };
+            navigator.serviceWorker?.ready
+              .then((registration) => registration.showNotification(title, options))
+              .catch((err) => {
+                console.warn("SW notification fallback failed, using Notification:", err);
+                new Notification(title, options);
+              });
+          }
+        } catch (err) {
+          console.warn("Foreground banner notification failed:", err);
+        }
         toast.info(`📬 ${payload.notification.title}: ${payload.notification.body}`);
       }).catch((err) => console.log("⚠️ Failed to setup foreground message listener:", err));
 
