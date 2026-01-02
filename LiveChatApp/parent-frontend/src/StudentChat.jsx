@@ -105,7 +105,31 @@ const StudentChat = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const messagesEndRef = useRef(null);
+  // Expose badge increment function globally for Android to call
+  useEffect(() => {
+    window.incrementBadgeFromAndroid = () => {
+      console.log("📢 Badge increment called from Android!");
+      setUnreadCount(prev => {
+        const newCount = prev + 1;
+        updateBadge(newCount);
+        localStorage.setItem("unreadCount", newCount.toString());
+        console.log(`✅ Badge incremented to: ${newCount}`);
+        return newCount;
+      });
+    };
 
+    window.testBadgeIncrement = () => {
+      console.log("🧪 Testing badge increment...");
+      window.incrementBadgeFromAndroid();
+    };
+
+    console.log("✅ Badge functions exposed: window.incrementBadgeFromAndroid() and window.testBadgeIncrement()");
+
+    return () => {
+      delete window.incrementBadgeFromAndroid;
+      delete window.testBadgeIncrement;
+    };
+  }, []);
   useEffect(() => {
     // Check if student is already logged in (token in localStorage)
     const token = localStorage.getItem("studentToken");
@@ -208,8 +232,10 @@ const StudentChat = () => {
           
           if (!isDuplicate) {
             // Increment unread counter
+            console.log("📨 NEW MESSAGE RECEIVED - Incrementing badge...");
             setUnreadCount(prev => {
               const newCount = prev + 1;
+              console.log(`📊 Badge count: ${prev} -> ${newCount}`);
               updateBadge(newCount);
               return newCount;
             });
@@ -255,6 +281,7 @@ const StudentChat = () => {
   // Save unread count to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem("unreadCount", unreadCount.toString());
+    updateBadge(unreadCount);
     console.log(`💾 Saved unread count to storage: ${unreadCount}`);
   }, [unreadCount]);
 
@@ -301,32 +328,49 @@ const StudentChat = () => {
   };
 
   const updateBadge = (count) => {
+    console.log(`📢 ========== BADGE UPDATE CALLED ==========`);
+    console.log(`🔢 Requested count: ${count}`);
+    console.log(`📱 Checking for NoticeB bridge...`);
+    
     // Update Android app badge via bridge - try multiple method names
     const bridge = window.NoticeB || window.NoticeB_Native;
     
     if (bridge) {
-      console.log(`🔔 Updating badge to: ${count}`);
+      console.log(`✅ Bridge found!`);
+      console.log(`🔧 Available methods:`, Object.keys(bridge).join(", "));
+      
+      let updated = false;
       
       // Try different possible method names
       if (typeof bridge.setBadge === 'function') {
         bridge.setBadge(count);
-        console.log(`✅ Badge set to ${count} via setBadge()`);
+        console.log(`✅✅✅ Badge set to ${count} via setBadge()`);
+        updated = true;
       } else if (typeof bridge.updateBadge === 'function') {
         bridge.updateBadge(count);
-        console.log(`✅ Badge set to ${count} via updateBadge()`);
+        console.log(`✅✅✅ Badge set to ${count} via updateBadge()`);
+        updated = true;
       } else if (count === 0 && typeof bridge.resetBadge === 'function') {
         bridge.resetBadge();
-        console.log("✅ Badge reset via resetBadge()");
+        console.log("✅✅✅ Badge reset via resetBadge()");
+        updated = true;
       } else if (count === 0 && typeof bridge.clearBadge === 'function') {
         bridge.clearBadge();
-        console.log("✅ Badge cleared via clearBadge()");
-      } else {
-        console.warn("⚠️ No badge update method found on bridge");
-        console.log("📱 Available bridge methods:", Object.keys(bridge));
+        console.log("✅✅✅ Badge cleared via clearBadge()");
+        updated = true;
+      }
+      
+      if (!updated) {
+        console.error("❌❌❌ NO BADGE METHOD FOUND!");
+        console.log("💡 Available methods on bridge:", Object.keys(bridge));
       }
     } else {
-      console.log("ℹ️ No NoticeB bridge found (running in web browser)");
+      console.warn("⚠️⚠️⚠️ No NoticeB bridge found!");
+      console.log("🔍 window.NoticeB:", window.NoticeB);
+      console.log("🔍 window.NoticeB_Native:", window.NoticeB_Native);
     }
+    
+    console.log(`📢 ========== END BADGE UPDATE ==========`);
   };
 
   const refreshMessages = async () => {
@@ -597,6 +641,18 @@ const StudentChat = () => {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button 
+            onClick={() => {
+              console.log("🧪 Manual badge increment test...");
+              setUnreadCount(prev => prev + 1);
+            }}
+            style={{
+              ...styles.logoutButton,
+              background: 'rgba(255,215,0,0.3)',
+            }}
+          >
+            🧪 Test +1
+          </button>
           <button 
             onClick={refreshMessages} 
             disabled={isRefreshing}
