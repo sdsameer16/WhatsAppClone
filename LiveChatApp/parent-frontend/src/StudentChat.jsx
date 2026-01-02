@@ -104,12 +104,18 @@ const StudentChat = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSeenTime, setLastSeenTime] = useState(Date.now());
+  const [unreadCount, setUnreadCount] = useState(0);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
     // Check if student is already logged in (token in localStorage)
     const token = localStorage.getItem("studentToken");
     const savedStudent = localStorage.getItem("student");
+    const savedLastSeen = localStorage.getItem("lastSeenTime");
+    
+    if (savedLastSeen) {
+      setLastSeenTime(parseInt(savedLastSeen));
+    }
     
     if (token && savedStudent) {
       setStudent(JSON.parse(savedStudent));
@@ -228,6 +234,18 @@ const StudentChat = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Calculate unread count whenever messages or lastSeenTime changes
+  useEffect(() => {
+    const unread = messages.filter(msg => {
+      const msgTime = new Date(msg.timestamp).getTime();
+      return msgTime > lastSeenTime;
+    }).length;
+    
+    setUnreadCount(unread);
+    updateBadge(unread);
+    console.log(`🔔 Unread messages: ${unread}`);
+  }, [messages, lastSeenTime]);
+
   const loadMessages = async () => {
     try {
       setIsLoading(true);
@@ -264,35 +282,43 @@ const StudentChat = () => {
   };
 
   const resetBadge = () => {
-    // Reset Android app badge via bridge - try multiple method names
+    // Update last seen time and save to localStorage
+    const now = Date.now();
+    setLastSeenTime(now);
+    localStorage.setItem("lastSeenTime", now.toString());
+    
+    // This will trigger unread count recalculation in useEffect
+    // which will then call updateBadge(0)
+    console.log("🔔 Badge reset - lastSeenTime updated");
+  };
+
+  const updateBadge = (count) => {
+    // Update Android app badge via bridge - try multiple method names
     const bridge = window.NoticeB || window.NoticeB_Native;
     
     if (bridge) {
-      console.log("🔔 Attempting to reset badge...");
-      console.log("📱 Available bridge methods:", Object.keys(bridge));
+      console.log(`🔔 Updating badge to: ${count}`);
       
       // Try different possible method names
-      if (typeof bridge.resetBadge === 'function') {
+      if (typeof bridge.setBadge === 'function') {
+        bridge.setBadge(count);
+        console.log(`✅ Badge set to ${count} via setBadge()`);
+      } else if (typeof bridge.updateBadge === 'function') {
+        bridge.updateBadge(count);
+        console.log(`✅ Badge set to ${count} via updateBadge()`);
+      } else if (count === 0 && typeof bridge.resetBadge === 'function') {
         bridge.resetBadge();
         console.log("✅ Badge reset via resetBadge()");
-      } else if (typeof bridge.clearBadge === 'function') {
+      } else if (count === 0 && typeof bridge.clearBadge === 'function') {
         bridge.clearBadge();
-        console.log("✅ Badge reset via clearBadge()");
-      } else if (typeof bridge.setBadge === 'function') {
-        bridge.setBadge(0);
-        console.log("✅ Badge reset via setBadge(0)");
-      } else if (typeof bridge.updateBadge === 'function') {
-        bridge.updateBadge(0);
-        console.log("✅ Badge reset via updateBadge(0)");
+        console.log("✅ Badge cleared via clearBadge()");
       } else {
-        console.warn("⚠️ No badge reset method found on bridge");
+        console.warn("⚠️ No badge update method found on bridge");
+        console.log("📱 Available bridge methods:", Object.keys(bridge));
       }
     } else {
       console.log("ℹ️ No NoticeB bridge found (running in web browser)");
     }
-    
-    // Update last seen time
-    setLastSeenTime(Date.now());
   };
 
   const refreshMessages = async () => {
@@ -551,7 +577,12 @@ const StudentChat = () => {
     <div style={styles.chatContainer}>
       <div style={styles.chatHeader}>
         <div>
-          <h3 style={styles.chatTitle}>📚 College Messages</h3>
+          <h3 style={styles.chatTitle}>
+            📚 College Messages
+            {unreadCount > 0 && (
+              <span style={styles.unreadBadge}>{unreadCount}</span>
+            )}
+          </h3>
           <div style={styles.studentInfo}>
             {student.name} • {student.studentId} • {student.branch} • Batch: {student.batch}
             {student.section && ` • Section: ${student.section}`}
@@ -728,6 +759,21 @@ const styles = {
   },
   chatTitle: {
     margin: "0 0 5px 0",
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+  },
+  unreadBadge: {
+    background: "#FF4444",
+    color: "white",
+    fontSize: "14px",
+    padding: "4px 10px",
+    borderRadius: "20px",
+    fontWeight: "bold",
+    minWidth: "24px",
+    textAlign: "center",
+    display: "inline-block",
+    animation: "pulse 1.5s ease-in-out infinite",
   },
   studentInfo: {
     fontSize: "13px",
