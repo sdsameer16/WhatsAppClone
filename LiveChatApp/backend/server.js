@@ -323,14 +323,11 @@ app.post("/api/admin/login", async (req, res) => {
 // Register FCM token for push notifications
 app.post("/api/fcm-token", async (req, res) => {
   try {
-    const { studentId, fcmToken, branch, batch, batches } = req.body;
+    const { studentId, fcmToken, branch, batch } = req.body;
 
     console.log(`📱 FCM token registration request from student: ${studentId}`);
 
-    // Prefer explicit batch; otherwise fall back to first item in batches array (frontend sends batches)
-    const resolvedBatch = batch || (Array.isArray(batches) && batches.length > 0 ? batches[0] : null);
-
-    if (!studentId || !fcmToken || !branch || !resolvedBatch) {
+    if (!studentId || !fcmToken || !branch || !batch) {
       console.log("❌ Missing studentId, fcmToken, branch, or batch");
       return res.status(400).json({ error: "Student ID, FCM token, branch, and batch are required" });
     }
@@ -347,18 +344,19 @@ app.post("/api/fcm-token", async (req, res) => {
       student.fcmTokens.push(fcmToken);
       // Update branch and batch if changed
       student.branch = branch;
-      student.batch = resolvedBatch;
+      student.batch = batch;
       await student.save();
       console.log(`✅ FCM token registered for student ${studentId} (Total tokens: ${student.fcmTokens.length})`);
       console.log(`   Token: ${fcmToken.substring(0, 30)}...`);
 
-      // Subscribe token to combined topic
+      // Subscribe token to branch and batch topics matching frontend format
       try {
-        const normalizedBranch = branch.replace(/\s+/g, "_").toLowerCase();
-        const normalizedBatch = resolvedBatch.replace(/\s+/g, "_").toLowerCase();
-        const combinedTopic = `branch_${normalizedBranch}_batch_${normalizedBatch}`;
-        await admin.messaging().subscribeToTopic([fcmToken], combinedTopic);
-        console.log(`✅ Token subscribed to topic: ${combinedTopic}`);
+        const branchTopic = `Branch_${branch.toUpperCase()}`;
+        const batchTopic = `Batch_${batch}`;
+        await admin.messaging().subscribeToTopic([fcmToken], branchTopic);
+        console.log(`✅ Token subscribed to branch topic: ${branchTopic}`);
+        await admin.messaging().subscribeToTopic([fcmToken], batchTopic);
+        console.log(`✅ Token subscribed to batch topic: ${batchTopic}`);
       } catch (topicError) {
         console.error(`⚠️  Failed to subscribe to topic:`, topicError.message);
         // Continue even if topic subscription fails
@@ -925,18 +923,22 @@ const sendBatchInfoToAdmin = async () => {
 const sendPushNotificationToTopic = async (messageText, senderName, messageId = '', branches = [], batches = []) => {
   try {
     // If no branches or batches specified, don't send any notification
-    if (branches.length === 0 || batches.length === 0) {
+    if (branches.length === 0 && batches.length === 0) {
       console.log('No branches or batches specified for notification');
       return { success: false, error: 'No branches or batches specified' };
     }
 
-    // Create a list of all topic combinations (branch_batch)
+    // Create a list of topics for each branch and batch
     const topics = [];
+    // Add branch topics (e.g., Branch_CSE)
     branches.forEach(branch => {
-      batches.forEach(batch => {
-        const topic = `branch_${branch}_batch_${batch}`.replace(/\s+/g, '_').toLowerCase();
-        topics.push(topic);
-      });
+      const branchTopic = `Branch_${branch.toUpperCase()}`;
+      topics.push(branchTopic);
+    });
+    // Add batch topics (e.g., Batch_2027-2028)
+    batches.forEach(batch => {
+      const batchTopic = `Batch_${batch}`;
+      topics.push(batchTopic);
     });
 
     console.log(`📤 Sending push notification to topics:`, topics);
@@ -951,11 +953,17 @@ const sendPushNotificationToTopic = async (messageText, senderName, messageId = 
         image: '',
         timestamp: new Date().toISOString(),
         targetBranches: JSON.stringify(branches),
-        targetBatches: JSON.stringify(batches)
+        targetBatches: JSON.stringify(batches),
+        channel_id: 'noticeb_notification_channel',
+        priority: 'high',
       },
       android: {
         priority: 'high',
         ttl: 86400000, // 24 hours in milliseconds
+        notification: {
+          channelId: 'noticeb_notification_channel',
+          sound: 'default',
+        },
       },
       apns: {
         payload: {
@@ -988,6 +996,10 @@ const sendPushNotificationToTopic = async (messageText, senderName, messageId = 
           android: {
             priority: 'high',
             ttl: 86400000, // 24 hours
+            notification: {
+              channelId: 'noticeb_notification_channel',
+              sound: 'default',
+            },
           },
           apns: {
             payload: {
