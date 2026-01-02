@@ -58,10 +58,14 @@ async function registerForPush(student) {
 
   // Request token and send to backend
   try {
+    console.log("🔑 ========== FCM TOKEN REQUEST ==========");
     const fcmToken = await requestNotificationPermission();
+    console.log("🔑 FCM Token result:", fcmToken ? (fcmToken.substring(0, 30) + "...") : "NULL");
+    
     if (fcmToken) {
       console.log("✅ FCM Token received:", fcmToken.substring(0, 30) + "...");
       console.log(`📤 Sending to backend - Branch: ${branch}, Batch: ${batch}`);
+      console.log(`📤 Combined topic will be: ${branch.toLowerCase()}_${batch.replace('-', '_')}`);
       
       const response = await axios.post(`${API_URL}/api/fcm-token`, {
         studentId: student.studentId,
@@ -70,11 +74,12 @@ async function registerForPush(student) {
         batch,
       });
       
-      console.log("✅ FCM token registered:", response.data);
-      toast.success(`Subscribed to Branch: ${branch}, Batch: ${batch}`);
+      console.log("✅✅✅ FCM token registered successfully:", response.data);
+      toast.success(`✅ Notifications enabled for ${branch} ${batch}`);
     } else {
-      console.log("⚠️ No FCM token received - notifications will not work");
-      toast.warning("Notification permission not granted");
+      console.error("❌ No FCM token received - notifications will NOT work");
+      toast.error("❌ Notification permission denied");
+    }
     }
   } catch (error) {
     console.error("❌ Failed to register FCM token:", error);
@@ -104,6 +109,7 @@ const StudentChat = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [lastSeenTime, setLastSeenTime] = useState(Date.now());
   const messagesEndRef = useRef(null);
   // Expose badge increment function globally for Android to call
   useEffect(() => {
@@ -123,11 +129,23 @@ const StudentChat = () => {
       window.incrementBadgeFromAndroid();
     };
 
+    // Listen for messages from service worker
+    const handleServiceWorkerMessage = (event) => {
+      console.log('[APP] Message from service worker:', event.data);
+      if (event.data && event.data.type === 'INCREMENT_BADGE') {
+        console.log('[APP] Incrementing badge from service worker');
+        setUnreadCount(event.data.count || 0);
+      }
+    };
+
+    navigator.serviceWorker?.addEventListener('message', handleServiceWorkerMessage);
+
     console.log("✅ Badge functions exposed: window.incrementBadgeFromAndroid() and window.testBadgeIncrement()");
 
     return () => {
       delete window.incrementBadgeFromAndroid;
       delete window.testBadgeIncrement;
+      navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage);
     };
   }, []);
   useEffect(() => {
@@ -135,12 +153,19 @@ const StudentChat = () => {
     const token = localStorage.getItem("studentToken");
     const savedStudent = localStorage.getItem("student");
     const savedUnreadCount = localStorage.getItem("unreadCount");
+    const savedLastSeen = localStorage.getItem("lastSeenTime");
     
     // Load saved unread count if exists
     if (savedUnreadCount) {
       const count = parseInt(savedUnreadCount) || 0;
       setUnreadCount(count);
       console.log(`🔔 Loaded unread count from storage: ${count}`);
+    }
+    
+    // Load last seen time
+    if (savedLastSeen) {
+      setLastSeenTime(parseInt(savedLastSeen));
+      console.log(`👀 Loaded last seen time from storage`);
     }
     
     if (token && savedStudent) {
@@ -325,6 +350,12 @@ const StudentChat = () => {
     setUnreadCount(0);
     updateBadge(0);
     localStorage.setItem("unreadCount", "0");
+    
+    // Update last seen time to mark all as read
+    const now = Date.now();
+    setLastSeenTime(now);
+    localStorage.setItem("lastSeenTime", now.toString());
+    console.log("👀 Updated last seen time - all messages marked as read");
   };
 
   const updateBadge = (count) => {
@@ -679,17 +710,31 @@ const StudentChat = () => {
             </p>
           </div>
         ) : (
-          messages.map((msg, i) => (
-            <div key={i} style={styles.messageCard}>
-              <div style={styles.messageHeader}>
-                <strong>👨‍💼 {msg.senderName || "HOD"}</strong>
-                <span style={styles.timestamp}>
-                  {new Date(msg.timestamp).toLocaleString()}
-                </span>
+          messages.map((msg, i) => {
+            const msgTime = new Date(msg.timestamp).getTime();
+            const isNew = msgTime > lastSeenTime;
+            
+            return (
+              <div 
+                key={i} 
+                style={{
+                  ...styles.messageCard,
+                  ...(isNew ? styles.newMessageCard : {})
+                }}
+              >
+                <div style={styles.messageHeader}>
+                  <strong>
+                    {isNew && <span style={styles.newBadge}>NEW</span>}
+                    👨‍💼 {msg.senderName || "HOD"}
+                  </strong>
+                  <span style={styles.timestamp}>
+                    {new Date(msg.timestamp).toLocaleString()}
+                  </span>
+                </div>
+                <div style={styles.messageContent}>{msg.message}</div>
               </div>
-              <div style={styles.messageContent}>{msg.message}</div>
-            </div>
-          ))
+            );
+          })
         )}
         <div ref={messagesEndRef} />
       </div>
@@ -857,6 +902,21 @@ const styles = {
     boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
     borderLeft: "4px solid #667eea",
     transition: "all 0.3s ease",
+  },
+  newMessageCard: {
+    background: "linear-gradient(to right, #f0f9ff, #ffffff)",
+    borderLeft: "4px solid #10b981",
+    boxShadow: "0 4px 20px rgba(16, 185, 129, 0.15)",
+  },
+  newBadge: {
+    background: "#10b981",
+    color: "white",
+    fontSize: "10px",
+    padding: "3px 8px",
+    borderRadius: "12px",
+    marginRight: "8px",
+    fontWeight: "bold",
+    textTransform: "uppercase",
   },
   messageHeader: {
     display: "flex",
