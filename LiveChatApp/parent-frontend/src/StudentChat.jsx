@@ -103,7 +103,6 @@ const StudentChat = () => {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastSeenTime, setLastSeenTime] = useState(Date.now());
   const [unreadCount, setUnreadCount] = useState(0);
   const messagesEndRef = useRef(null);
 
@@ -111,11 +110,6 @@ const StudentChat = () => {
     // Check if student is already logged in (token in localStorage)
     const token = localStorage.getItem("studentToken");
     const savedStudent = localStorage.getItem("student");
-    const savedLastSeen = localStorage.getItem("lastSeenTime");
-    
-    if (savedLastSeen) {
-      setLastSeenTime(parseInt(savedLastSeen));
-    }
     
     if (token && savedStudent) {
       setStudent(JSON.parse(savedStudent));
@@ -196,6 +190,13 @@ const StudentChat = () => {
           const isDuplicate = prevMessages.some(msg => msg.messageId === data.messageId);
           
           if (!isDuplicate) {
+            // Increment unread counter
+            setUnreadCount(prev => {
+              const newCount = prev + 1;
+              updateBadge(newCount);
+              return newCount;
+            });
+            
             // Show small toast notification for NEW message only
             toast.info(`📬 ${data.senderName}: ${data.message.substring(0, 30)}...`, {
               position: "top-center",
@@ -234,18 +235,6 @@ const StudentChat = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Calculate unread count whenever messages or lastSeenTime changes
-  useEffect(() => {
-    const unread = messages.filter(msg => {
-      const msgTime = new Date(msg.timestamp).getTime();
-      return msgTime > lastSeenTime;
-    }).length;
-    
-    setUnreadCount(unread);
-    updateBadge(unread);
-    console.log(`🔔 Unread messages: ${unread}`);
-  }, [messages, lastSeenTime]);
-
   const loadMessages = async () => {
     try {
       setIsLoading(true);
@@ -282,14 +271,9 @@ const StudentChat = () => {
   };
 
   const resetBadge = () => {
-    // Update last seen time and save to localStorage
-    const now = Date.now();
-    setLastSeenTime(now);
-    localStorage.setItem("lastSeenTime", now.toString());
-    
-    // This will trigger unread count recalculation in useEffect
-    // which will then call updateBadge(0)
-    console.log("🔔 Badge reset - lastSeenTime updated");
+    console.log("🔔 Resetting badge counter to 0");
+    setUnreadCount(0);
+    updateBadge(0);
   };
 
   const updateBadge = (count) => {
@@ -615,31 +599,17 @@ const StudentChat = () => {
             </p>
           </div>
         ) : (
-          messages.map((msg, i) => {
-            const msgTime = new Date(msg.timestamp).getTime();
-            const isNew = msgTime > lastSeenTime;
-            
-            return (
-              <div 
-                key={i} 
-                style={{
-                  ...styles.messageCard,
-                  ...(isNew ? styles.newMessageCard : {})
-                }}
-              >
-                <div style={styles.messageHeader}>
-                  <strong>
-                    {isNew && <span style={styles.newBadge}>NEW</span>}
-                    👨‍💼 {msg.senderName || "HOD"}
-                  </strong>
-                  <span style={styles.timestamp}>
-                    {new Date(msg.timestamp).toLocaleString()}
-                  </span>
-                </div>
-                <div style={styles.messageContent}>{msg.message}</div>
+          messages.map((msg, i) => (
+            <div key={i} style={styles.messageCard}>
+              <div style={styles.messageHeader}>
+                <strong>👨‍💼 {msg.senderName || "HOD"}</strong>
+                <span style={styles.timestamp}>
+                  {new Date(msg.timestamp).toLocaleString()}
+                </span>
               </div>
-            );
-          })
+              <div style={styles.messageContent}>{msg.message}</div>
+            </div>
+          ))
         )}
         <div ref={messagesEndRef} />
       </div>
@@ -807,21 +777,6 @@ const styles = {
     boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
     borderLeft: "4px solid #667eea",
     transition: "all 0.3s ease",
-  },
-  newMessageCard: {
-    background: "#f0f7ff",
-    borderLeft: "4px solid #4CAF50",
-    boxShadow: "0 4px 15px rgba(76, 175, 80, 0.2)",
-    animation: "pulse 2s ease-in-out infinite",
-  },
-  newBadge: {
-    background: "#4CAF50",
-    color: "white",
-    fontSize: "10px",
-    padding: "2px 8px",
-    borderRadius: "12px",
-    marginRight: "8px",
-    fontWeight: "bold",
   },
   messageHeader: {
     display: "flex",
