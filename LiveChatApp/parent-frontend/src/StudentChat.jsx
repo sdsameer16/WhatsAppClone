@@ -122,6 +122,20 @@ const StudentChat = () => {
       // Reset badge when app opens
       resetBadge();
       
+      // Add window focus listener to reset badge when app comes to foreground
+      const handleFocus = () => {
+        console.log("👀 App came to foreground - resetting badge");
+        resetBadge();
+      };
+      
+      window.addEventListener('focus', handleFocus);
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+          console.log("👀 App became visible - resetting badge");
+          resetBadge();
+        }
+      });
+      
       registerForPush(student);
 
       // Listen for foreground messages
@@ -205,6 +219,7 @@ const StudentChat = () => {
         if (socket) {
           socket.disconnect();
         }
+        window.removeEventListener('focus', handleFocus);
       };
     }
   }, [student, currentView]);
@@ -249,12 +264,33 @@ const StudentChat = () => {
   };
 
   const resetBadge = () => {
-    // Reset Android app badge via bridge
+    // Reset Android app badge via bridge - try multiple method names
     const bridge = window.NoticeB || window.NoticeB_Native;
-    if (bridge && typeof bridge.resetBadge === 'function') {
-      bridge.resetBadge();
-      console.log("🔔 Badge reset to 0");
+    
+    if (bridge) {
+      console.log("🔔 Attempting to reset badge...");
+      console.log("📱 Available bridge methods:", Object.keys(bridge));
+      
+      // Try different possible method names
+      if (typeof bridge.resetBadge === 'function') {
+        bridge.resetBadge();
+        console.log("✅ Badge reset via resetBadge()");
+      } else if (typeof bridge.clearBadge === 'function') {
+        bridge.clearBadge();
+        console.log("✅ Badge reset via clearBadge()");
+      } else if (typeof bridge.setBadge === 'function') {
+        bridge.setBadge(0);
+        console.log("✅ Badge reset via setBadge(0)");
+      } else if (typeof bridge.updateBadge === 'function') {
+        bridge.updateBadge(0);
+        console.log("✅ Badge reset via updateBadge(0)");
+      } else {
+        console.warn("⚠️ No badge reset method found on bridge");
+      }
+    } else {
+      console.log("ℹ️ No NoticeB bridge found (running in web browser)");
     }
+    
     // Update last seen time
     setLastSeenTime(Date.now());
   };
