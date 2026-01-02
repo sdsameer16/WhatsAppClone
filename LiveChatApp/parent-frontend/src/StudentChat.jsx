@@ -80,7 +80,6 @@ async function registerForPush(student) {
       console.error("❌ No FCM token received - notifications will NOT work");
       toast.error("❌ Notification permission denied");
     }
-    }
   } catch (error) {
     console.error("❌ Failed to register FCM token:", error);
     console.error("❌ Error response:", error.response);
