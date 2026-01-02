@@ -6,21 +6,14 @@ function subscribeStudentToNotices(branch, batch) {
     return;
   }
 
-  // Subscribe to Branch topic (e.g., "Branch_CSE")
-  if (branch) {
-    bridge.subscribe("Branch_" + branch);
-    console.log("✅ Subscribed to Branch topic: Branch_" + branch);
-  }
-
-  // Subscribe to Batch topic (e.g., "Batch_2027-2028")
-  if (batch) {
-    bridge.subscribe("Batch_" + batch);
-    console.log("✅ Subscribed to Batch topic: Batch_" + batch);
+  // Subscribe to combined topic: branch_startYear_endYear (e.g., "cse_2023_2027")
+  if (branch && batch) {
+    const combinedTopic = branch.toLowerCase() + "_" + batch.replace("-", "_");
+    bridge.subscribe(combinedTopic);
+    console.log("✅ Subscribed to combined topic: " + combinedTopic);
   }
   
-  console.log("Topics Synced: Branch " + branch + ", Batch: " + batch);
-
-  console.log("Topics Synced: Branch " + branch + ", Batch: " + batch);
+  console.log("Topic Synced: " + branch.toLowerCase() + "_" + batch.replace("-", "_"));
 }
 import React, { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
@@ -109,6 +102,8 @@ const StudentChat = () => {
   const [student, setStudent] = useState(null);
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastSeenTime, setLastSeenTime] = useState(Date.now());
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -124,6 +119,9 @@ const StudentChat = () => {
 
   useEffect(() => {
     if (student && currentView === "chat") {
+      // Reset badge when app opens
+      resetBadge();
+      
       registerForPush(student);
 
       // Listen for foreground messages
@@ -247,6 +245,50 @@ const StudentChat = () => {
       });
     } catch (error) {
       console.log("Audio error:", error);
+    }
+  };
+
+  const resetBadge = () => {
+    // Reset Android app badge via bridge
+    const bridge = window.NoticeB || window.NoticeB_Native;
+    if (bridge && typeof bridge.resetBadge === 'function') {
+      bridge.resetBadge();
+      console.log("🔔 Badge reset to 0");
+    }
+    // Update last seen time
+    setLastSeenTime(Date.now());
+  };
+
+  const refreshMessages = async () => {
+    if (isRefreshing) return;
+    
+    try {
+      setIsRefreshing(true);
+      console.log("🔄 Refreshing messages...");
+      
+      const response = await axios.get(`${API_URL}/api/messages/${student.studentId}`);
+      setMessages(response.data);
+      
+      // Mark all as delivered
+      response.data.forEach(msg => {
+        if (socket && msg.messageId) {
+          socket.emit("markDelivered", {
+            messageId: msg.messageId,
+            studentId: student.studentId,
+          });
+        }
+      });
+      
+      // Reset badge and update last seen
+      resetBadge();
+      
+      toast.success("✅ Messages refreshed");
+      console.log(`✅ Refreshed ${response.data.length} messages`);
+    } catch (error) {
+      console.error("Error refreshing messages:", error);
+      toast.error("Failed to refresh messages");
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -479,9 +521,22 @@ const StudentChat = () => {
             {student.section && ` • Section: ${student.section}`}
           </div>
         </div>
-        <button onClick={handleLogout} style={styles.logoutButton}>
-          Logout
-        </button>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button 
+            onClick={refreshMessages} 
+            disabled={isRefreshing}
+            style={{
+              ...styles.logoutButton,
+              opacity: isRefreshing ? 0.6 : 1,
+              cursor: isRefreshing ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {isRefreshing ? '⏳' : '🔄'} Refresh
+          </button>
+          <button onClick={handleLogout} style={styles.logoutButton}>
+            Logout
+          </button>
+        </div>
       </div>
 
       <div style={styles.messagesContainer}>
@@ -493,17 +548,31 @@ const StudentChat = () => {
             </p>
           </div>
         ) : (
-          messages.map((msg, i) => (
-            <div key={i} style={styles.messageCard}>
-              <div style={styles.messageHeader}>
-                <strong>👨‍💼 {msg.senderName || "HOD"}</strong>
-                <span style={styles.timestamp}>
-                  {new Date(msg.timestamp).toLocaleString()}
-                </span>
+          messages.map((msg, i) => {
+            const msgTime = new Date(msg.timestamp).getTime();
+            const isNew = msgTime > lastSeenTime;
+            
+            return (
+              <div 
+                key={i} 
+                style={{
+                  ...styles.messageCard,
+                  ...(isNew ? styles.newMessageCard : {})
+                }}
+              >
+                <div style={styles.messageHeader}>
+                  <strong>
+                    {isNew && <span style={styles.newBadge}>NEW</span>}
+                    👨‍💼 {msg.senderName || "HOD"}
+                  </strong>
+                  <span style={styles.timestamp}>
+                    {new Date(msg.timestamp).toLocaleString()}
+                  </span>
+                </div>
+                <div style={styles.messageContent}>{msg.message}</div>
               </div>
-              <div style={styles.messageContent}>{msg.message}</div>
-            </div>
-          ))
+            );
+          })
         )}
         <div ref={messagesEndRef} />
       </div>
@@ -655,6 +724,22 @@ const styles = {
     marginBottom: "15px",
     boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
     borderLeft: "4px solid #667eea",
+    transition: "all 0.3s ease",
+  },
+  newMessageCard: {
+    background: "#f0f7ff",
+    borderLeft: "4px solid #4CAF50",
+    boxShadow: "0 4px 15px rgba(76, 175, 80, 0.2)",
+    animation: "pulse 2s ease-in-out infinite",
+  },
+  newBadge: {
+    background: "#4CAF50",
+    color: "white",
+    fontSize: "10px",
+    padding: "2px 8px",
+    borderRadius: "12px",
+    marginRight: "8px",
+    fontWeight: "bold",
   },
   messageHeader: {
     display: "flex",

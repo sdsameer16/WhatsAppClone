@@ -364,15 +364,12 @@ app.post("/api/fcm-token", async (req, res) => {
       console.log(`✅ FCM token registered for student ${studentId} (Total tokens: ${student.fcmTokens.length})`);
       console.log(`   Token: ${fcmToken.substring(0, 30)}...`);
 
-      // Subscribe token to branch and batch topics matching frontend format
+      // Subscribe token to combined topic: branch_startYear_endYear (e.g., cse_2023_2027)
       try {
-        const branchTopic = `Branch_${branch.toUpperCase()}`;
-        const batchTopic = `Batch_${batch}`;
-        console.log(`🎯 Attempting to subscribe to topics: ${branchTopic}, ${batchTopic}`);
-        await admin.messaging().subscribeToTopic([fcmToken], branchTopic);
-        console.log(`✅ Token subscribed to branch topic: ${branchTopic}`);
-        await admin.messaging().subscribeToTopic([fcmToken], batchTopic);
-        console.log(`✅ Token subscribed to batch topic: ${batchTopic}`);
+        const combinedTopic = `${branch.toLowerCase()}_${batch.replace('-', '_')}`;
+        console.log(`🎯 Attempting to subscribe to combined topic: ${combinedTopic}`);
+        await admin.messaging().subscribeToTopic([fcmToken], combinedTopic);
+        console.log(`✅ Token subscribed to combined topic: ${combinedTopic}`);
       } catch (topicError) {
         console.error(`⚠️  Failed to subscribe to topic:`, topicError.message);
         // Continue even if topic subscription fails
@@ -939,25 +936,21 @@ const sendBatchInfoToAdmin = async () => {
 const sendPushNotificationToTopic = async (messageText, senderName, messageId = '', branches = [], batches = []) => {
   try {
     // If no branches or batches specified, don't send any notification
-    if (branches.length === 0 && batches.length === 0) {
-      console.log('No branches or batches specified for notification');
-      return { success: false, error: 'No branches or batches specified' };
+    if (branches.length === 0 || batches.length === 0) {
+      console.log('Both branches and batches are required for notification');
+      return { success: false, error: 'Both branches and batches required' };
     }
 
-    // Create a list of topics for each branch and batch
+    // Create combined topics: branch_startYear_endYear (e.g., cse_2023_2027)
     const topics = [];
-    // Add branch topics (e.g., Branch_CSE)
     branches.forEach(branch => {
-      const branchTopic = `Branch_${branch.toUpperCase()}`;
-      topics.push(branchTopic);
-    });
-    // Add batch topics (e.g., Batch_2027-2028)
-    batches.forEach(batch => {
-      const batchTopic = `Batch_${batch}`;
-      topics.push(batchTopic);
+      batches.forEach(batch => {
+        const combinedTopic = `${branch.toLowerCase()}_${batch.replace('-', '_')}`;
+        topics.push(combinedTopic);
+      });
     });
 
-    console.log(`📤 Sending push notification to topics:`, topics);
+    console.log(`📤 Sending push notification to combined topics:`, topics);
     
     // Create the base message
     const message = {
