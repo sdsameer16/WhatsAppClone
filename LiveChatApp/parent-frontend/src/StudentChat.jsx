@@ -85,8 +85,15 @@ async function registerForPush(student) {
     }
   } catch (error) {
     console.error("❌ Failed to register FCM token:", error);
-    console.error("❌ Error details:", error.response?.data || error.message);
-    toast.error(`Failed to enable notifications: ${error.response?.data?.error || error.message}`);
+    console.error("❌ Error response:", error.response);
+    console.error("❌ Error data:", error.response?.data);
+    console.error("❌ Error message:", error.message);
+    
+    const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message || "Unknown error";
+    const errorDetails = JSON.stringify(error.response?.data, null, 2);
+    
+    console.error("❌ Full error details:", errorDetails);
+    toast.error(`Failed to enable notifications: ${errorMsg}`);
   }
 }
 

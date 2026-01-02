@@ -31,7 +31,10 @@ export const requestNotificationPermission = async () => {
       const nativeToken = window.AndroidBridge.getFCMToken();
       if (nativeToken && nativeToken.length > 0) {
         console.log('✅ Using native FCM token from Android:', nativeToken.substring(0, 30) + '...');
-        window.AndroidBridge.log('FCM token retrieved: ' + nativeToken.substring(0, 30) + '...');
+        // Only call log if it exists
+        if (typeof window.AndroidBridge.log === 'function') {
+          window.AndroidBridge.log('FCM token retrieved: ' + nativeToken.substring(0, 30) + '...');
+        }
         return nativeToken;
       }
     }
