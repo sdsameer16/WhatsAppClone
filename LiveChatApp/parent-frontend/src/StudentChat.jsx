@@ -110,6 +110,14 @@ const StudentChat = () => {
     // Check if student is already logged in (token in localStorage)
     const token = localStorage.getItem("studentToken");
     const savedStudent = localStorage.getItem("student");
+    const savedUnreadCount = localStorage.getItem("unreadCount");
+    
+    // Load saved unread count if exists
+    if (savedUnreadCount) {
+      const count = parseInt(savedUnreadCount) || 0;
+      setUnreadCount(count);
+      console.log(`🔔 Loaded unread count from storage: ${count}`);
+    }
     
     if (token && savedStudent) {
       setStudent(JSON.parse(savedStudent));
@@ -141,6 +149,15 @@ const StudentChat = () => {
       // Listen for foreground messages
       onMessageListener().then((payload) => {
         console.log("📬 Foreground notification received:", payload);
+        
+        // Increment badge for foreground notification too
+        setUnreadCount(prev => {
+          const newCount = prev + 1;
+          updateBadge(newCount);
+          console.log(`🔔 Foreground notification - Badge updated to: ${newCount}`);
+          return newCount;
+        });
+        
         // Show system banner notification while app is open
         try {
           const { title, body } = payload.notification || {};
@@ -235,6 +252,12 @@ const StudentChat = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Save unread count to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem("unreadCount", unreadCount.toString());
+    console.log(`💾 Saved unread count to storage: ${unreadCount}`);
+  }, [unreadCount]);
+
   const loadMessages = async () => {
     try {
       setIsLoading(true);
@@ -274,6 +297,7 @@ const StudentChat = () => {
     console.log("🔔 Resetting badge counter to 0");
     setUnreadCount(0);
     updateBadge(0);
+    localStorage.setItem("unreadCount", "0");
   };
 
   const updateBadge = (count) => {
