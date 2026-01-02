@@ -326,10 +326,25 @@ app.post("/api/fcm-token", async (req, res) => {
     const { studentId, fcmToken, branch, batch } = req.body;
 
     console.log(`📱 FCM token registration request from student: ${studentId}`);
+    console.log(`📊 Request data:`, { 
+      studentId, 
+      fcmTokenLength: fcmToken?.length, 
+      branch, 
+      batch,
+      hasAllFields: !!(studentId && fcmToken && branch && batch)
+    });
 
     if (!studentId || !fcmToken || !branch || !batch) {
-      console.log("❌ Missing studentId, fcmToken, branch, or batch");
-      return res.status(400).json({ error: "Student ID, FCM token, branch, and batch are required" });
+      console.log("❌ Missing required fields:", { studentId: !!studentId, fcmToken: !!fcmToken, branch: !!branch, batch: !!batch });
+      return res.status(400).json({ 
+        error: "Student ID, FCM token, branch, and batch are required",
+        missing: {
+          studentId: !studentId,
+          fcmToken: !fcmToken,
+          branch: !branch,
+          batch: !batch
+        }
+      });
     }
 
     // Find student and add token if not already present
@@ -353,6 +368,7 @@ app.post("/api/fcm-token", async (req, res) => {
       try {
         const branchTopic = `Branch_${branch.toUpperCase()}`;
         const batchTopic = `Batch_${batch}`;
+        console.log(`🎯 Attempting to subscribe to topics: ${branchTopic}, ${batchTopic}`);
         await admin.messaging().subscribeToTopic([fcmToken], branchTopic);
         console.log(`✅ Token subscribed to branch topic: ${branchTopic}`);
         await admin.messaging().subscribeToTopic([fcmToken], batchTopic);

@@ -35,13 +35,30 @@ let socket = null;
 
 // Register device for push (FCM) using student data
 async function registerForPush(student) {
-  if (!student) return;
+  if (!student) {
+    console.error("❌ No student data provided to registerForPush");
+    return;
+  }
 
   console.log("📱 Initializing FCM for student:", student.studentId);
+  console.log("📊 Student data:", { 
+    branch: student.branch, 
+    batch: student.batch, 
+    startYear: student.startYear, 
+    endYear: student.endYear 
+  });
 
   // Normalize branch/batch
   const branch = student.branch?.toUpperCase();
   const batch = student.batch || `${student.startYear}-${student.endYear}`;
+
+  console.log("📍 Normalized - Branch:", branch, "Batch:", batch);
+
+  if (!branch || !batch) {
+    console.error("❌ Missing branch or batch data!");
+    toast.error("Missing branch or batch information. Please re-login.");
+    return;
+  }
 
   // Android bridge topic subscribe (if present)
   subscribeStudentToNotices(branch, batch);
@@ -51,20 +68,25 @@ async function registerForPush(student) {
     const fcmToken = await requestNotificationPermission();
     if (fcmToken) {
       console.log("✅ FCM Token received:", fcmToken.substring(0, 30) + "...");
-      console.log(`Subscribing to Branch: ${branch}, Batch: ${batch}`);
+      console.log(`📤 Sending to backend - Branch: ${branch}, Batch: ${batch}`);
+      
       const response = await axios.post(`${API_URL}/api/fcm-token`, {
         studentId: student.studentId,
         fcmToken,
         branch,
         batch,
       });
+      
       console.log("✅ FCM token registered:", response.data);
       toast.success(`Subscribed to Branch: ${branch}, Batch: ${batch}`);
     } else {
       console.log("⚠️ No FCM token received - notifications will not work");
+      toast.warning("Notification permission not granted");
     }
   } catch (error) {
-    console.error("❌ Failed to register FCM token:", error.response?.data || error.message);
+    console.error("❌ Failed to register FCM token:", error);
+    console.error("❌ Error details:", error.response?.data || error.message);
+    toast.error(`Failed to enable notifications: ${error.response?.data?.error || error.message}`);
   }
 }
 
