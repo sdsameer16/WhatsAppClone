@@ -15,6 +15,28 @@ const messageSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  senderMobile: {
+    type: String,
+  },
+  senderRole: {
+    type: String,
+  },
+  category: {
+    type: String,
+    required: true,
+    enum: [
+      "General",
+      "Academic Updates",
+      "T&P Updates",
+      "Coding & App Development Updates",
+      "Assessment Related Updates",
+      "Student Activities Updates",
+      "Certification and Internship Updates",
+      "Student Achievements",
+      "Faculty Achievements"
+    ],
+    default: "General",
+  },
   message: {
     type: String,
     required: true,

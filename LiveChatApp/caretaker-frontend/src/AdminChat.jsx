@@ -12,35 +12,83 @@ const AdminChat = () => {
   const [adminId, setAdminId] = useState("");
   const [password, setPassword] = useState("");
   const [admin, setAdmin] = useState(null);
-  
+
+  // Registration State
+  const [newName, setNewName] = useState("");
+  const [newAdminId, setNewAdminId] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newMobile, setNewMobile] = useState("");
+  const [newRole, setNewRole] = useState("HOD"); // Default
+  const [newDepartment, setNewDepartment] = useState("");
+
+  const roles = ["HOD", "DEO", "Coordinator", "Faculty", "Principal"]; // Options
+  const categories = [
+    "General",
+    "Academic Updates",
+    "T&P Updates",
+    "Coding & App Development Updates",
+    "Assessment Related Updates",
+    "Student Activities Updates",
+    "Certification and Internship Updates",
+    "Student Achievements",
+    "Faculty Achievements"
+  ];
+
+  // Filters and data
+
   // Filters and data
   const [batches, setBatches] = useState([]);
   const [branches, setBranches] = useState([]);
   const [sections, setSections] = useState([]);
   const [students, setStudents] = useState([]);
-  
+
   // Selection state
   const [selectedBatches, setSelectedBatches] = useState([]);
   const [selectedBranches, setSelectedBranches] = useState([]);
   const [selectedSection, setSelectedSection] = useState("");
-  
+
   // Get unique batch years from batches data
   const batchYears = [...new Set(batches.map(b => b.batch))].sort().reverse();
-  
+
   // Message state
   const [message, setMessage] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("General");
   const [uploadFile, setUploadFile] = useState(null);
   const [showStudentList, setShowStudentList] = useState(true);
-  
+
   // Message history
   const [messageHistory, setMessageHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
-  
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editMessageContent, setEditMessageContent] = useState("");
+  const [infoMessage, setInfoMessage] = useState(null); // { recipients: [] }
+  const [isAutoCategory, setIsAutoCategory] = useState(true); // Track if user manually changed it
+
+  // Auto-categorization
+  useEffect(() => {
+    if (!message || !isAutoCategory) return;
+    const msgLower = message.toLowerCase();
+
+    if (msgLower.includes("exam") || msgLower.includes("test") || msgLower.includes("quiz") || msgLower.includes("result") || msgLower.includes("mid") || msgLower.includes("sem")) {
+      setSelectedCategory("Assessment Related Updates");
+    } else if (msgLower.includes("placement") || msgLower.includes("job") || msgLower.includes("intern") || msgLower.includes("package") || msgLower.includes("hiring")) {
+      setSelectedCategory("T&P Updates");
+    } else if (msgLower.includes("code") || msgLower.includes("hackathon") || msgLower.includes("app") || msgLower.includes("web") || msgLower.includes("development")) {
+      setSelectedCategory("Coding & App Development Updates");
+    } else if (msgLower.includes("certificate") || msgLower.includes("course") || msgLower.includes("enroll")) {
+      setSelectedCategory("Certification and Internship Updates");
+    } else if (msgLower.includes("schedule") || msgLower.includes("class") || msgLower.includes("lecture") || msgLower.includes("timetable")) {
+      setSelectedCategory("Academic Updates");
+    } else if (msgLower.includes("achievement") || msgLower.includes("winner") || msgLower.includes("congratulation")) {
+      setSelectedCategory("Student Achievements");
+    }
+  }, [message, isAutoCategory]);
+
   useEffect(() => {
     // Check if admin is already logged in
     const token = localStorage.getItem("adminToken");
     const savedAdmin = localStorage.getItem("admin");
-    
+
     if (token && savedAdmin) {
       setAdmin(JSON.parse(savedAdmin));
       setCurrentView("chat");
@@ -78,7 +126,7 @@ const AdminChat = () => {
         axios.get(`${API_URL}/api/batches`),
         axios.get(`${API_URL}/api/branches`),
       ]);
-      
+
       setBatches(batchesRes.data);
       setBranches(branchesRes.data);
     } catch (error) {
@@ -150,6 +198,73 @@ const AdminChat = () => {
     }
   };
 
+  const handleEditMessage = (msg) => {
+    setEditingMessageId(msg.messageId);
+    setEditMessageContent(msg.message);
+  };
+
+  const saveEditMessage = async (messageId) => {
+    try {
+      await axios.put(`${API_URL}/api/messages/${messageId}`, { message: editMessageContent });
+      toast.success("Message updated successfully");
+      setEditingMessageId(null);
+      loadMessageHistory(); // Refresh
+    } catch (error) {
+      toast.error("Failed to update message");
+    }
+  };
+
+  const handleDeleteMessage = async (messageId) => {
+    if (!window.confirm("Are you sure you want to delete this message for everyone?")) return;
+    try {
+      await axios.delete(`${API_URL}/api/messages/${messageId}`);
+      toast.success("Message deleted for everyone");
+      loadMessageHistory(); // Refresh
+    } catch (error) {
+      toast.error("Failed to delete message");
+    }
+  };
+
+  const handleViewInfo = async (messageId) => {
+    try {
+      const response = await axios.get(`${API_URL}/api/messages/${messageId}/info`);
+      setInfoMessage(response.data);
+    } catch (error) {
+      toast.error("Failed to load message info");
+    }
+  };
+
+  const handleRegister = async () => {
+    if (!newName || !newAdminId || !newPassword || !newMobile || !newDepartment) {
+      toast.error("Please fill all fields");
+      return;
+    }
+
+    try {
+      const response = await axios.post(`${API_URL}/api/admin/create`, {
+        name: newName,
+        adminId: newAdminId,
+        password: newPassword,
+        mobileNumber: newMobile,
+        role: newRole,
+        department: newDepartment
+      });
+
+      if (response.data.success) {
+        toast.success("Registration successful! Please login.");
+        setCurrentView("login");
+        // Clear form
+        setNewName("");
+        setNewAdminId("");
+        setNewPassword("");
+        setNewMobile("");
+        setNewDepartment("");
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.error || "Registration failed");
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("adminToken");
     localStorage.removeItem("admin");
@@ -163,8 +278,8 @@ const AdminChat = () => {
 
   const toggleBatch = (batch) => {
     setSelectedBatches(prev => {
-      const newBatches = prev.includes(batch) 
-        ? prev.filter(b => b !== batch) 
+      const newBatches = prev.includes(batch)
+        ? prev.filter(b => b !== batch)
         : [...prev, batch];
       return newBatches;
     });
@@ -216,7 +331,11 @@ const AdminChat = () => {
       branches: selectedBranches,
       section: selectedSection || undefined,
       message,
+      message,
       senderName: admin.name,
+      senderRole: admin.role,
+      senderMobile: admin.mobileNumber,
+      category: selectedCategory
     });
 
     toast.info("Sending message...");
@@ -277,6 +396,41 @@ const AdminChat = () => {
           <button onClick={handleLogin} style={styles.primaryButton}>
             Login as HOD
           </button>
+          <div style={{ marginTop: '20px', textAlign: 'center' }}>
+            <button onClick={() => setCurrentView('register')} style={styles.secondaryButton}>
+              New Staff? Register Here
+            </button>
+          </div>
+        </div>
+        <ToastContainer position="bottom-right" />
+      </div>
+    );
+  }
+
+  // ==================== REGISTER VIEW ====================
+  if (currentView === "register") {
+    return (
+      <div style={styles.container}>
+        <div style={styles.formCard}>
+          <h2 style={styles.title}>📝 Staff Registration</h2>
+          <p style={styles.subtitle}>Create your profile</p>
+
+          <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Full Name" style={styles.input} />
+          <input type="text" value={newAdminId} onChange={(e) => setNewAdminId(e.target.value)} placeholder="Staff ID (e.g. FAC01)" style={styles.input} />
+          <input type="tel" value={newMobile} onChange={(e) => setNewMobile(e.target.value)} placeholder="Mobile Number" style={styles.input} />
+          <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Password" style={styles.input} />
+          <input type="text" value={newDepartment} onChange={(e) => setNewDepartment(e.target.value)} placeholder="Department (e.g. CSE)" style={styles.input} />
+
+          <label style={{ alignSelf: 'flex-start', fontSize: '14px', color: '#555', marginTop: '10px' }}>Role:</label>
+          <select value={newRole} onChange={(e) => setNewRole(e.target.value)} style={styles.input}>
+            {roles.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+
+          <button onClick={handleRegister} style={styles.primaryButton}>Register</button>
+
+          <button onClick={() => setCurrentView("login")} style={styles.secondaryButton}>
+            Back to Login
+          </button>
         </div>
         <ToastContainer position="bottom-right" />
       </div>
@@ -302,6 +456,38 @@ const AdminChat = () => {
         </div>
 
         <div style={styles.historyContainer}>
+          {/* Info Modal */}
+          {infoMessage && (
+            <div style={styles.modalOverlay} onClick={() => setInfoMessage(null)}>
+              <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+                <h3>📊 Message Delivery Info</h3>
+                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                    <thead>
+                      <tr style={{ background: '#f8f9fa', textAlign: 'left' }}>
+                        <th style={{ padding: '8px' }}>Student</th>
+                        <th style={{ padding: '8px' }}>Mobile</th>
+                        <th style={{ padding: '8px' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {infoMessage.recipients.map(r => (
+                        <tr key={r.studentId} style={{ borderBottom: '1px solid #eee' }}>
+                          <td style={{ padding: '8px' }}>{r.name} ({r.studentId})</td>
+                          <td style={{ padding: '8px' }}>{r.mobileNumber}</td>
+                          <td style={{ padding: '8px' }}>
+                            {r.delivered ? "✅ Delivered" : "⏳ Pending"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button onClick={() => setInfoMessage(null)} style={styles.closeModalBtn}>Close</button>
+              </div>
+            </div>
+          )}
+
           {messageHistory.length === 0 ? (
             <div style={styles.emptyState}>
               <p>No messages sent yet</p>
@@ -310,18 +496,48 @@ const AdminChat = () => {
             messageHistory.map((msg, index) => (
               <div key={msg.messageId || index} style={styles.historyCard}>
                 <div style={styles.historyHeader}>
-                  <strong style={styles.historySender}>{msg.senderName}</strong>
+                  <strong style={styles.historySender}>{msg.senderName} ({msg.senderRole || "HOD"})</strong>
                   <span style={styles.historyTimestamp}>
                     {new Date(msg.timestamp).toLocaleString()}
                   </span>
                 </div>
-                <div style={styles.historyMessage}>{msg.message}</div>
+
+                {editingMessageId === msg.messageId ? (
+                  <div style={{ margin: '10px 0' }}>
+                    <textarea
+                      value={editMessageContent}
+                      onChange={(e) => setEditMessageContent(e.target.value)}
+                      style={{ width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ddd' }}
+                    />
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
+                      <button onClick={() => saveEditMessage(msg.messageId)} style={{ ...styles.actionButton, background: '#28a745' }}>Save</button>
+                      <button onClick={() => setEditingMessageId(null)} style={{ ...styles.actionButton, background: '#6c757d' }}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={styles.historyMessage}>{msg.message}</div>
+                )}
+
+                <div style={{ fontSize: '12px', marginTop: '5px', color: '#666' }}>
+                  Category: <strong>{msg.category || "General"} | </strong>
+                  Sender Mobile: {msg.senderMobile || "N/A"}
+                </div>
+
                 <div style={styles.historyTarget}>
                   📍 Batches: {msg.targetBatches?.join(", ")} | Branches: {msg.targetBranches?.join(", ")}
                   {msg.targetSection && ` | Section: ${msg.targetSection}`}
                 </div>
-                <div style={styles.historyStats}>
-                  Delivered: {msg.recipients?.filter(r => r.delivered).length || 0} / {msg.recipients?.length || 0}
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+                  <div style={styles.historyStats}>
+                    Delivered: {msg.recipients?.filter(r => r.delivered).length || 0} / {msg.recipients?.length || 0}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '5px' }}>
+                    <button onClick={() => handleViewInfo(msg.messageId)} style={{ ...styles.actionButton, background: '#17a2b8' }}>Info</button>
+                    <button onClick={() => handleEditMessage(msg)} style={{ ...styles.actionButton, background: '#ffc107', color: '#000' }}>Edit</button>
+                    <button onClick={() => handleDeleteMessage(msg.messageId)} style={{ ...styles.actionButton, background: '#dc3545' }}>Delete</button>
+                  </div>
                 </div>
               </div>
             ))
@@ -354,7 +570,7 @@ const AdminChat = () => {
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
               <label style={styles.label}>Branches:</label>
-              <button 
+              <button
                 onClick={() => toggleAllBranches(selectedBranches.length !== branches.length)}
                 style={styles.selectAllButton}
               >
@@ -363,8 +579,8 @@ const AdminChat = () => {
             </div>
             <div style={styles.checkboxGroup}>
               {branches.map(branch => (
-                <label 
-                  key={branch} 
+                <label
+                  key={branch}
                   style={{
                     ...styles.checkboxLabel,
                     ...(selectedBranches.includes(branch) ? styles.selectedItem : {})
@@ -391,7 +607,7 @@ const AdminChat = () => {
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
               <label style={styles.label}>Batches:</label>
-              <button 
+              <button
                 onClick={() => toggleAllBatches(selectedBatches.length !== batchYears.length)}
                 style={styles.selectAllButton}
               >
@@ -400,8 +616,8 @@ const AdminChat = () => {
             </div>
             <div style={styles.checkboxGroup}>
               {batchYears.map(year => (
-                <label 
-                  key={year} 
+                <label
+                  key={year}
                   style={{
                     ...styles.batchLabel,
                     ...(selectedBatches.includes(year) ? styles.selectedItem : {})
@@ -517,6 +733,20 @@ const AdminChat = () => {
             📜 View Message History
           </button>
 
+          <label style={styles.label}>Category:</label>
+          <select
+            value={selectedCategory}
+            onChange={(e) => {
+              setSelectedCategory(e.target.value);
+              setIsAutoCategory(false);
+            }}
+            style={{ ...styles.select, marginBottom: '15px' }}
+          >
+            {categories.map(cat => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
@@ -541,14 +771,14 @@ const AdminChat = () => {
               </div>
             )}
           </div>
-          
+
           <button
             onClick={sendBatchMessage}
             style={{
               ...styles.sendButton,
               opacity: (message.trim() && selectedBatches.length > 0 && selectedBranches.length > 0) ? 1 : 0.5,
-              backgroundColor: (selectedBatches.length > 0 && selectedBranches.length > 0) 
-                ? '#4CAF50' 
+              backgroundColor: (selectedBatches.length > 0 && selectedBranches.length > 0)
+                ? '#4CAF50'
                 : styles.sendButton.backgroundColor,
             }}
             disabled={!message.trim() || selectedBatches.length === 0 || selectedBranches.length === 0}
@@ -914,6 +1144,60 @@ const styles = {
     fontWeight: "bold",
     marginBottom: "20px",
   },
+  secondaryButton: {
+    padding: "10px",
+    background: "transparent",
+    color: "#f5576c",
+    border: "2px solid #f5576c",
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontWeight: "bold",
+    width: "100%",
+    marginTop: "10px",
+  },
+  actionButton: {
+    padding: '6px 12px',
+    border: 'none',
+    borderRadius: '4px',
+    color: 'white',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: 'bold',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0,0,0,0.5)',
+    zIndex: 1000,
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    background: 'white',
+    borderRadius: '15px',
+    padding: '25px',
+    width: '90%',
+    maxWidth: '500px',
+    maxHeight: '80vh',
+    overflowY: 'auto',
+    boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
+  },
+  closeModalBtn: {
+    marginTop: '20px',
+    width: '100%',
+    padding: '10px',
+    background: '#f5576c',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+  },
   divider: {
     height: "2px",
     background: "#e0e0e0",
@@ -964,7 +1248,7 @@ const styles = {
     cursor: "pointer",
     fontSize: "14px",
     fontWeight: "bold",
-  },  historyButton: {
+  }, historyButton: {
     width: "100%",
     padding: "12px",
     background: "#17a2b8",
@@ -1029,6 +1313,7 @@ const styles = {
     textAlign: "center",
     padding: "60px 20px",
     color: "#999",
-  },};
+  },
+};
 
 export default AdminChat;

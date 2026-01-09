@@ -12,7 +12,7 @@ function subscribeStudentToNotices(branch, batch) {
     bridge.subscribe(combinedTopic);
     console.log("✅ Subscribed to combined topic: " + combinedTopic);
   }
-  
+
   console.log("Topic Synced: " + branch.toLowerCase() + "_" + batch.replace("-", "_"));
 }
 import React, { useState, useEffect, useRef } from "react";
@@ -34,11 +34,11 @@ async function registerForPush(student) {
   }
 
   console.log("📱 Initializing FCM for student:", student.studentId);
-  console.log("📊 Student data:", { 
-    branch: student.branch, 
-    batch: student.batch, 
-    startYear: student.startYear, 
-    endYear: student.endYear 
+  console.log("📊 Student data:", {
+    branch: student.branch,
+    batch: student.batch,
+    startYear: student.startYear,
+    endYear: student.endYear
   });
 
   // Normalize branch/batch
@@ -61,19 +61,19 @@ async function registerForPush(student) {
     console.log("🔑 ========== FCM TOKEN REQUEST ==========");
     const fcmToken = await requestNotificationPermission();
     console.log("🔑 FCM Token result:", fcmToken ? (fcmToken.substring(0, 30) + "...") : "NULL");
-    
+
     if (fcmToken) {
       console.log("✅ FCM Token received:", fcmToken.substring(0, 30) + "...");
       console.log(`📤 Sending to backend - Branch: ${branch}, Batch: ${batch}`);
       console.log(`📤 Combined topic will be: ${branch.toLowerCase()}_${batch.replace('-', '_')}`);
-      
+
       const response = await axios.post(`${API_URL}/api/fcm-token`, {
         studentId: student.studentId,
         fcmToken,
         branch,
         batch,
       });
-      
+
       console.log("✅✅✅ FCM token registered successfully:", response.data);
       toast.success(`✅ Notifications enabled for ${branch} ${batch}`);
     } else {
@@ -85,10 +85,10 @@ async function registerForPush(student) {
     console.error("❌ Error response:", error.response);
     console.error("❌ Error data:", error.response?.data);
     console.error("❌ Error message:", error.message);
-    
+
     const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message || "Unknown error";
     const errorDetails = JSON.stringify(error.response?.data, null, 2);
-    
+
     console.error("❌ Full error details:", errorDetails);
     toast.error(`Failed to enable notifications: ${errorMsg}`);
   }
@@ -110,6 +110,107 @@ const StudentChat = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [lastSeenTime, setLastSeenTime] = useState(Date.now());
   const messagesEndRef = useRef(null);
+
+  // Theme and Game State
+  const [theme, setTheme] = useState("default"); // winter, summer, rainy
+  const [showThemeSelector, setShowThemeSelector] = useState(false);
+  const [gameActive, setGameActive] = useState(false);
+  const [gameScore, setGameScore] = useState(0);
+  const [gameItems, setGameItems] = useState([]); // { id, x, y, type, speed }
+
+  // New State for Category, Tabs and Message Info
+  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [senderInfoModal, setSenderInfoModal] = useState(null); // { name, role, mobile }
+
+  // Categories
+  const categories = [
+    "All",
+    "Academic Updates",
+    "T&P Updates",
+    "Coding & App Development Updates",
+    "Assessment Related Updates",
+    "Student Activities Updates",
+    "Certification and Internship Updates",
+    "Student Achievements",
+    "Faculty Achievements"
+  ];
+
+  // Determine season based on month
+  const getInitialSeason = () => {
+    const month = new Date().getMonth();
+    // June(5) - Sept(8): Rainy
+    // Oct(9) - Jan(0): Winter
+    // Feb(1) - May(4): Summer
+    if (month >= 5 && month <= 8) return "rainy";
+    if (month >= 9 || month === 0) return "winter";
+    return "summer";
+  };
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("appTheme");
+    if (savedTheme) {
+      setTheme(savedTheme);
+    } else {
+      setTheme(getInitialSeason());
+    }
+  }, []);
+
+  const changeTheme = (newTheme) => {
+    setTheme(newTheme);
+    localStorage.setItem("appTheme", newTheme);
+    setShowThemeSelector(false);
+  };
+
+  // Game Loop
+  useEffect(() => {
+    let gameLoop;
+    if (gameActive) {
+      const spawnRate = 800; // ms
+      const fallSpeed = 5; // pixels per 50ms
+
+      const spawnItem = () => {
+        setGameItems(prev => [
+          ...prev,
+          {
+            id: Date.now(),
+            x: Math.random() * (window.innerWidth - 50),
+            y: -50,
+            type: theme === "winter" ? "❄️" : theme === "rainy" ? "💧" : "☀️",
+            speed: Math.random() * 2 + 2
+          }
+        ]);
+      };
+
+      const updateItems = () => {
+        setGameItems(prev =>
+          prev.map(item => ({ ...item, y: item.y + item.speed }))
+            .filter(item => item.y < window.innerHeight)
+        );
+      };
+
+      gameLoop = setInterval(() => {
+        updateItems();
+      }, 30);
+
+      const spawner = setInterval(spawnItem, spawnRate);
+
+      return () => {
+        clearInterval(gameLoop);
+        clearInterval(spawner);
+      };
+    } else {
+      setGameItems([]);
+      setGameScore(0);
+    }
+  }, [gameActive, theme]);
+
+  const handleGameItemClick = (id) => {
+    setGameScore(prev => prev + 10);
+    setGameItems(prev => prev.filter(item => item.id !== id));
+    // Optional: Play sound effect
+    playNotification();
+  };
+
   // Expose badge increment function globally for Android to call
   useEffect(() => {
     window.incrementBadgeFromAndroid = () => {
@@ -153,20 +254,20 @@ const StudentChat = () => {
     const savedStudent = localStorage.getItem("student");
     const savedUnreadCount = localStorage.getItem("unreadCount");
     const savedLastSeen = localStorage.getItem("lastSeenTime");
-    
+
     // Load saved unread count if exists
     if (savedUnreadCount) {
       const count = parseInt(savedUnreadCount) || 0;
       setUnreadCount(count);
       console.log(`🔔 Loaded unread count from storage: ${count}`);
     }
-    
+
     // Load last seen time
     if (savedLastSeen) {
       setLastSeenTime(parseInt(savedLastSeen));
       console.log(`👀 Loaded last seen time from storage`);
     }
-    
+
     if (token && savedStudent) {
       setStudent(JSON.parse(savedStudent));
       setCurrentView("chat");
@@ -177,13 +278,13 @@ const StudentChat = () => {
     if (student && currentView === "chat") {
       // Reset badge when app opens
       resetBadge();
-      
+
       // Add window focus listener to reset badge when app comes to foreground
       const handleFocus = () => {
         console.log("👀 App came to foreground - resetting badge");
         resetBadge();
       };
-      
+
       window.addEventListener('focus', handleFocus);
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
@@ -191,13 +292,13 @@ const StudentChat = () => {
           resetBadge();
         }
       });
-      
+
       registerForPush(student);
 
       // Listen for foreground messages
       onMessageListener().then((payload) => {
         console.log("📬 Foreground notification received:", payload);
-        
+
         // Increment badge for foreground notification too
         setUnreadCount(prev => {
           const newCount = prev + 1;
@@ -205,7 +306,7 @@ const StudentChat = () => {
           console.log(`🔔 Foreground notification - Badge updated to: ${newCount}`);
           return newCount;
         });
-        
+
         // Show system banner notification while app is open
         try {
           const { title, body } = payload.notification || {};
@@ -249,11 +350,11 @@ const StudentChat = () => {
           message: data.message,
           timestamp: data.timestamp,
         };
-        
+
         // Check if message already exists (avoid duplicates)
         setMessages((prevMessages) => {
           const isDuplicate = prevMessages.some(msg => msg.messageId === data.messageId);
-          
+
           if (!isDuplicate) {
             // Increment unread counter
             console.log("📨 NEW MESSAGE RECEIVED - Incrementing badge...");
@@ -263,7 +364,7 @@ const StudentChat = () => {
               updateBadge(newCount);
               return newCount;
             });
-            
+
             // Show small toast notification for NEW message only
             toast.info(`📬 ${data.senderName}: ${data.message.substring(0, 30)}...`, {
               position: "top-center",
@@ -273,12 +374,12 @@ const StudentChat = () => {
               pauseOnHover: true,
               draggable: true,
             });
-            
+
             playNotification();
-            
+
             return [...prevMessages, newMsg];
           }
-          
+
           return prevMessages;
         });
 
@@ -313,7 +414,7 @@ const StudentChat = () => {
     try {
       setIsLoading(true);
       const response = await axios.get(`${API_URL}/api/messages/${student.studentId}`);
-      
+
       // Load messages silently (no notifications for old messages)
       setMessages(response.data);
       console.log(`📨 Loaded ${response.data.length} messages (silent load)`);
@@ -349,7 +450,7 @@ const StudentChat = () => {
     setUnreadCount(0);
     updateBadge(0);
     localStorage.setItem("unreadCount", "0");
-    
+
     // Update last seen time to mark all as read
     const now = Date.now();
     setLastSeenTime(now);
@@ -361,16 +462,16 @@ const StudentChat = () => {
     console.log(`📢 ========== BADGE UPDATE CALLED ==========`);
     console.log(`🔢 Requested count: ${count}`);
     console.log(`📱 Checking for NoticeB bridge...`);
-    
+
     // Update Android app badge via bridge - try multiple method names
     const bridge = window.NoticeB || window.NoticeB_Native;
-    
+
     if (bridge) {
       console.log(`✅ Bridge found!`);
       console.log(`🔧 Available methods:`, Object.keys(bridge).join(", "));
-      
+
       let updated = false;
-      
+
       // Try different possible method names
       if (typeof bridge.setBadge === 'function') {
         bridge.setBadge(count);
@@ -389,7 +490,7 @@ const StudentChat = () => {
         console.log("✅✅✅ Badge cleared via clearBadge()");
         updated = true;
       }
-      
+
       if (!updated) {
         console.error("❌❌❌ NO BADGE METHOD FOUND!");
         console.log("💡 Available methods on bridge:", Object.keys(bridge));
@@ -399,20 +500,20 @@ const StudentChat = () => {
       console.log("🔍 window.NoticeB:", window.NoticeB);
       console.log("🔍 window.NoticeB_Native:", window.NoticeB_Native);
     }
-    
+
     console.log(`📢 ========== END BADGE UPDATE ==========`);
   };
 
   const refreshMessages = async () => {
     if (isRefreshing) return;
-    
+
     try {
       setIsRefreshing(true);
       console.log("🔄 Refreshing messages...");
-      
+
       const response = await axios.get(`${API_URL}/api/messages/${student.studentId}`);
       setMessages(response.data);
-      
+
       // Mark all as delivered
       response.data.forEach(msg => {
         if (socket && msg.messageId) {
@@ -422,10 +523,10 @@ const StudentChat = () => {
           });
         }
       });
-      
+
       // Reset badge and update last seen
       resetBadge();
-      
+
       toast.success("✅ Messages refreshed");
       console.log(`✅ Refreshed ${response.data.length} messages`);
     } catch (error) {
@@ -543,8 +644,8 @@ const StudentChat = () => {
             New Student? Register Here
           </button>
         </div>
-        <ToastContainer 
-          position="top-center" 
+        <ToastContainer
+          position="top-center"
           autoClose={3000}
           hideProgressBar={false}
           newestOnTop
@@ -635,8 +736,8 @@ const StudentChat = () => {
             Already have an account? Login
           </button>
         </div>
-        <ToastContainer 
-          position="top-center" 
+        <ToastContainer
+          position="top-center"
           autoClose={3000}
           hideProgressBar={false}
           newestOnTop
@@ -655,8 +756,127 @@ const StudentChat = () => {
     return <CSELoader />;
   }
 
+  // Visual Effects Components
+  const renderBackgroundEffects = () => {
+    if (theme === "none" || theme === "default") return null;
+
+    // Generate static background effects based on theme
+    const count = 20;
+    const elements = [];
+    const icon = theme === "winter" ? "❄️" : theme === "rainy" ? "💧" : "☀️";
+
+    for (let i = 0; i < count; i++) {
+      const style = {
+        left: `${Math.random() * 100}vw`,
+        animationDuration: `${Math.random() * 5 + 5}s`,
+        animationDelay: `${Math.random() * 5}s`,
+        opacity: Math.random() * 0.5 + 0.2,
+        fontSize: `${Math.random() * 20 + 10}px`
+      };
+      elements.push(
+        <div key={i} className={`falling-item ${theme}-item`} style={style}>
+          {icon}
+        </div>
+      );
+    }
+    return <div className="background-effects">{elements}</div>;
+  };
+
   return (
-    <div style={styles.chatContainer}>
+    <div style={{ ...styles.chatContainer, ...getThemeStyles(theme) }}>
+      {/* Dynamic Background Effects */}
+      <style>{`
+        @keyframes fall {
+          0% { transform: translateY(-10vh) rotate(0deg); }
+          100% { transform: translateY(100vh) rotate(360deg); }
+        }
+        @keyframes rainFall {
+          0% { transform: translate(10vw, -10vh) rotate(45deg); }
+          100% { transform: translate(-20vw, 100vh) rotate(45deg); }
+        }
+        .falling-item {
+          position: absolute;
+          top: -50px;
+          user-select: none;
+          pointer-events: none;
+          animation-name: fall;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+          z-index: 0;
+        }
+        .falling-item.rainy-item {
+          animation-name: rainFall;
+        }
+        .background-effects {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            pointer-events: none;
+        }
+      `}</style>
+
+      {renderBackgroundEffects()}
+
+      {/* Mini Game Overlay */}
+      {gameActive && (
+        <div style={styles.gameOverlay}>
+          <div style={styles.scoreBoard}>Score: {gameScore}</div>
+          <button onClick={() => setGameActive(false)} style={styles.closeGameBtn}>❌ End Game</button>
+          {gameItems.map(item => (
+            <div
+              key={item.id}
+              onClick={() => handleGameItemClick(item.id)}
+              style={{
+                position: 'absolute',
+                left: item.x,
+                top: item.y,
+                fontSize: '30px',
+                cursor: 'pointer',
+                userSelect: 'none',
+                zIndex: 1000,
+                transform: item.type === "💧" ? "rotate(45deg)" : "none"
+              }}
+            >
+              {item.type}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Theme Selector Button */}
+      {!gameActive && (
+        <div style={styles.themeSelectorContainer}>
+          {showThemeSelector && (
+            <div style={styles.themeOptions}>
+              <button
+                onClick={() => {
+                  setTheme("none");
+                  setShowThemeSelector(false);
+                  localStorage.setItem("appTheme", "none");
+                }}
+                style={{ ...styles.themeOptionBtn, background: '#eee' }}
+                title="None"
+              >
+                🚫
+              </button>
+              <button onClick={() => changeTheme('winter')} style={styles.themeOptionBtn} title="Winter">❄️</button>
+              <button onClick={() => changeTheme('rainy')} style={styles.themeOptionBtn} title="Rainy">🌧️</button>
+              <button onClick={() => changeTheme('summer')} style={styles.themeOptionBtn} title="Summer">☀️</button>
+              <button onClick={() => { setGameActive(true); setShowThemeSelector(false); }} style={styles.playBtn} title="Play Game">🎮</button>
+            </div>
+          )}
+          <button
+            onClick={() => setShowThemeSelector(!showThemeSelector)}
+            style={styles.mainThemeBtn}
+          >
+            🎨
+          </button>
+        </div>
+      )}
+
       <div style={styles.chatHeader}>
         <div>
           <h3 style={styles.chatTitle}>
@@ -671,7 +891,7 @@ const StudentChat = () => {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <button 
+          <button
             onClick={() => {
               console.log("🧪 Manual badge increment test...");
               setUnreadCount(prev => prev + 1);
@@ -683,8 +903,8 @@ const StudentChat = () => {
           >
             🧪 Test +1
           </button>
-          <button 
-            onClick={refreshMessages} 
+          <button
+            onClick={refreshMessages}
             disabled={isRefreshing}
             style={{
               ...styles.logoutButton,
@@ -712,10 +932,10 @@ const StudentChat = () => {
           messages.map((msg, i) => {
             const msgTime = new Date(msg.timestamp).getTime();
             const isNew = msgTime > lastSeenTime;
-            
+
             return (
-              <div 
-                key={i} 
+              <div
+                key={i}
                 style={{
                   ...styles.messageCard,
                   ...(isNew ? styles.newMessageCard : {})
@@ -742,8 +962,8 @@ const StudentChat = () => {
         ℹ️ This is a read-only message board. You'll receive notifications from your HOD here.
       </div>
 
-      <ToastContainer 
-        position="top-center" 
+      <ToastContainer
+        position="top-center"
         autoClose={3000}
         hideProgressBar={false}
         newestOnTop
@@ -758,7 +978,102 @@ const StudentChat = () => {
 };
 
 // ==================== STYLES ====================
+// New Helper for Dynamic Theme Styles
+const getThemeStyles = (theme) => {
+  switch (theme) {
+    case 'winter':
+      return { background: 'linear-gradient(to bottom, #2C3E50, #4CA1AF)' };
+    case 'summer':
+      return { background: 'linear-gradient(to bottom, #2980B9, #6DD5FA, #FFFFFF)' }; // Bright Sky
+    case 'rainy':
+      return { background: 'linear-gradient(to bottom, #3a3b3c, #808080)' }; // Dark Gray
+    default:
+      return {};
+  }
+};
+
 const styles = {
+  themeSelectorContainer: {
+    position: 'fixed',
+    bottom: '80px',
+    right: '20px',
+    zIndex: 200,
+    display: 'flex',
+    flexDirection: 'column-reverse',
+    alignItems: 'center',
+    gap: '10px'
+  },
+  mainThemeBtn: {
+    width: '50px',
+    height: '50px',
+    borderRadius: '50%',
+    border: 'none',
+    background: '#fff',
+    boxShadow: '0 4px 10px rgba(0,0,0,0.3)',
+    fontSize: '24px',
+    cursor: 'pointer',
+    transition: 'transform 0.2s',
+  },
+  themeOptions: {
+    display: 'flex',
+    flexDirection: 'column', // Stack vertically above
+    gap: '10px',
+    animation: 'popIn 0.3s ease-out'
+  },
+  themeOptionBtn: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    border: 'none',
+    background: 'rgba(255,255,255,0.9)',
+    fontSize: '20px',
+    cursor: 'pointer',
+    boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+  },
+  playBtn: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    border: 'none',
+    background: '#ff6b6b',
+    color: 'white',
+    fontSize: '20px',
+    cursor: 'pointer',
+    boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+  },
+  gameOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    zIndex: 999,
+    background: 'rgba(0,0,0,0.3)', // Slight dim
+  },
+  scoreBoard: {
+    position: 'absolute',
+    top: '20px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    background: 'white',
+    padding: '10px 20px',
+    borderRadius: '20px',
+    fontSize: '24px',
+    fontWeight: 'bold',
+    boxShadow: '0 4px 10px rgba(0,0,0,0.3)',
+  },
+  closeGameBtn: {
+    position: 'absolute',
+    top: '20px',
+    right: '20px',
+    background: '#ff4444',
+    color: 'white',
+    border: 'none',
+    padding: '10px',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+  },
   container: {
     width: "100%",
     height: "100vh",
@@ -939,6 +1254,119 @@ const styles = {
     fontSize: "13px",
     color: "#666",
     textAlign: "center",
+  },
+  themeSelectorContainer: {
+    position: 'fixed',
+    bottom: '80px',
+    right: '20px',
+    zIndex: 200,
+    display: 'flex',
+    flexDirection: 'column-reverse',
+    alignItems: 'center',
+    gap: '10px'
+  },
+  mainThemeBtn: {
+    width: '50px',
+    height: '50px',
+    borderRadius: '50%',
+    border: 'none',
+    background: '#fff',
+    boxShadow: '0 4px 10px rgba(0,0,0,0.3)',
+    fontSize: '24px',
+    cursor: 'pointer',
+    transition: 'transform 0.2s',
+  },
+  themeOptions: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    animation: 'popIn 0.3s ease-out',
+    marginBottom: '10px'
+  },
+  themeOptionBtn: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    border: 'none',
+    background: 'rgba(255,255,255,0.9)',
+    fontSize: '20px',
+    cursor: 'pointer',
+    boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+  },
+  categoryScrollContainer: {
+    display: 'flex',
+    overflowX: 'auto',
+    gap: '10px',
+    padding: '10px 15px',
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    borderTop: '1px solid rgba(255,255,255,0.1)',
+    scrollbarWidth: 'none', // Hide scrollbar Firefox
+    msOverflowStyle: 'none', // Hide scrollbar IE/Edge
+  },
+  categoryTab: {
+    padding: '6px 16px',
+    borderRadius: '20px',
+    border: 'none',
+    fontSize: '13px',
+    whiteSpace: 'nowrap',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    flexShrink: 0,
+  },
+  senderInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+  },
+  senderName: {
+    fontWeight: 'bold',
+    color: '#444',
+    cursor: 'pointer',
+    textDecoration: 'underline',
+    textDecorationStyle: 'dotted',
+    fontSize: '14px',
+  },
+  messageCategory: {
+    fontSize: '10px',
+    background: '#e0e7ff',
+    color: '#4338ca',
+    padding: '2px 8px',
+    borderRadius: '10px',
+    alignSelf: 'flex-start',
+    fontWeight: 'bold',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0,0,0,0.5)',
+    zIndex: 1000,
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '20px',
+  },
+  modalContent: {
+    background: 'white',
+    borderRadius: '15px',
+    padding: '25px',
+    width: '100%',
+    maxWidth: '300px',
+    boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
+    animation: 'popIn 0.3s ease-out',
+  },
+  closeModalBtn: {
+    marginTop: '20px',
+    width: '100%',
+    padding: '10px',
+    background: '#667eea',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
   },
 };
 
