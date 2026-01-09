@@ -1015,7 +1015,7 @@ const StudentChat = () => {
                     >
                       <strong>
                         {isNew && <span style={styles.newBadge}>NEW</span>}
-                        <span style={styles.senderName}>{msg.senderName || "HOD"} ℹ️</span>
+                        <span style={styles.senderName}>{msg.senderName || "HOD"}</span>
                       </strong>
                     </div>
                     <span style={styles.timestamp}>
