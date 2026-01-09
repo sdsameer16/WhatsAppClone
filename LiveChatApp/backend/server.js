@@ -1,49 +1,3 @@
-// ...existing code...
-// ==================== ADMIN SEND NOTICE ROUTE ====================
-// Send notification to Branch and/or Batch topic
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-app.post("/api/send-notice", async (req, res) => {
-  try {
-    const { branch, batches, title, body } = req.body;
-    if (!title || !body || (!branch && (!batches || batches.length === 0))) {
-      return res.status(400).json({ error: "Title, body, and at least branch or batches are required" });
-    }
-
-    // Build topic(s)
-    let topics = [];
-    if (branch) {
-      topics.push(`Branch_${branch}`);
-    }
-    if (batches && Array.isArray(batches)) {
-      batches.forEach(batch => topics.push(`Batch_${batch}`));
-    }
-
-    // Send to each topic
-    let results = [];
-    for (const topic of topics) {
-      const message = {
-        data: {
-          title,
-          body,
-          badge: "1"
-        },
-        topic
-      };
-      try {
-        const response = await admin.messaging().send(message);
-        results.push({ topic, success: true, response });
-      } catch (error) {
-        results.push({ topic, success: false, error: error.message });
-      }
-    }
-    res.json({ success: true, results });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
 import express from "express";
 import http from "http";
 import { Server } from "socket.io";
@@ -57,6 +11,10 @@ import { dirname, join } from 'path';
 // Get current directory using ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+const app = express();
+app.use(cors());
+app.use(express.json());
 
 // Initialize Firebase Admin (ENV first, then file)
 if (!admin.apps.length) {
