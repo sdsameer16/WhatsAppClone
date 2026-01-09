@@ -124,16 +124,21 @@ const StudentChat = () => {
 
   // Categories
   const categories = [
-    "All",
-    "Academic Updates",
-    "T&P Updates",
-    "Coding & App Development Updates",
-    "Assessment Related Updates",
-    "Student Activities Updates",
-    "Certification and Internship Updates",
-    "Student Achievements",
-    "Faculty Achievements"
+    { name: "All", icon: "📨" },
+    { name: "Academic Updates", icon: "🎓" },
+    { name: "T&P Updates", icon: "💼" },
+    { name: "Coding & App Development Updates", icon: "💻" },
+    { name: "Assessment Related Updates", icon: "📝" },
+    { name: "Student Activities Updates", icon: "🎭" },
+    { name: "Certification and Internship Updates", icon: "📜" },
+    { name: "Student Achievements", icon: "🏆" },
+    { name: "Faculty Achievements", icon: "🏅" }
   ];
+
+  const getCategoryCount = (categoryName) => {
+    if (categoryName === "All") return messages.length;
+    return messages.filter(m => m.category === categoryName).length;
+  };
 
   // Determine season based on month
   const getInitialSeason = () => {
@@ -920,40 +925,116 @@ const StudentChat = () => {
         </div>
       </div>
 
+      {/* Category Tabs */}
+      <div style={styles.categoryScrollContainer}>
+        {categories.map((cat) => {
+          const isActive = selectedCategory === cat.name;
+          const count = getCategoryCount(cat.name);
+          return (
+            <button
+              key={cat.name}
+              onClick={() => setSelectedCategory(cat.name)}
+              style={{
+                ...styles.categoryTab,
+                background: isActive ? 'white' : 'rgba(255,255,255,0.2)',
+                color: isActive ? '#667eea' : 'white',
+                fontWeight: isActive ? 'bold' : 'normal',
+                position: 'relative'
+              }}
+              title={cat.name}
+            >
+              <span style={{ fontSize: '16px', marginRight: '5px' }}>{cat.icon}</span>
+              {count > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  top: '-5px',
+                  right: '-5px',
+                  background: '#ff4757',
+                  color: 'white',
+                  borderRadius: '50%',
+                  padding: '2px 5px',
+                  fontSize: '10px',
+                  minWidth: '15px',
+                  textAlign: 'center',
+                  fontWeight: 'bold',
+                  boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
+                }}>
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       <div style={styles.messagesContainer}>
-        {messages.length === 0 ? (
+        {/* Info Modal */}
+        {senderInfoModal && (
+          <div style={styles.modalOverlay} onClick={() => setSenderInfoModal(null)}>
+            <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+              <h3 style={{ marginTop: 0, borderBottom: '1px solid #eee', paddingBottom: '10px' }}>👨‍💼 Sender Details</h3>
+              <div style={styles.senderInfo}>
+                <p><strong>Name:</strong> {senderInfoModal.name}</p>
+                <p><strong>Role:</strong> {senderInfoModal.role || "HOD"}</p>
+                <p><strong>Mobile:</strong> {senderInfoModal.mobile || "N/A"}</p>
+              </div>
+              <button onClick={() => setSenderInfoModal(null)} style={styles.closeModalBtn}>Close</button>
+            </div>
+          </div>
+        )}
+
+        {/* Filtered Message List */}
+        {messages.filter(msg => selectedCategory === "All" || msg.category === selectedCategory).length === 0 ? (
           <div style={styles.emptyState}>
-            <p>📭 No messages yet</p>
-            <p style={{ fontSize: 14, color: "#666" }}>
-              Messages from HOD will appear here
-            </p>
+            <p>📭 No messages in {selectedCategory}</p>
           </div>
         ) : (
-          messages.map((msg, i) => {
-            const msgTime = new Date(msg.timestamp).getTime();
-            const isNew = msgTime > lastSeenTime;
+          messages
+            .filter(msg => selectedCategory === "All" || msg.category === selectedCategory)
+            .map((msg, i) => {
+              const msgTime = new Date(msg.timestamp).getTime();
+              const isNew = msgTime > lastSeenTime;
 
-            return (
-              <div
-                key={i}
-                style={{
-                  ...styles.messageCard,
-                  ...(isNew ? styles.newMessageCard : {})
-                }}
-              >
-                <div style={styles.messageHeader}>
-                  <strong>
-                    {isNew && <span style={styles.newBadge}>NEW</span>}
-                    👨‍💼 {msg.senderName || "HOD"}
-                  </strong>
-                  <span style={styles.timestamp}>
-                    {new Date(msg.timestamp).toLocaleString()}
-                  </span>
+              return (
+                <div
+                  key={i}
+                  style={{
+                    ...styles.messageCard,
+                    ...(isNew ? styles.newMessageCard : {})
+                  }}
+                >
+                  <div style={styles.messageHeader}>
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
+                      onClick={() => setSenderInfoModal({
+                        name: msg.senderName,
+                        role: msg.senderRole,
+                        mobile: msg.senderMobile
+                      })}
+                      title="Click for Sender Info"
+                    >
+                      <strong>
+                        {isNew && <span style={styles.newBadge}>NEW</span>}
+                        <span style={styles.senderName}>{msg.senderName || "HOD"} ℹ️</span>
+                      </strong>
+                    </div>
+                    <span style={styles.timestamp}>
+                      {new Date(msg.timestamp).toLocaleString()}
+                    </span>
+                  </div>
+
+                  {msg.category && (
+                    <div style={{ marginBottom: '5px' }}>
+                      <span style={styles.messageCategory}>
+                        {categories.find(c => c.name === msg.category)?.icon} {msg.category}
+                      </span>
+                    </div>
+                  )}
+
+                  <div style={styles.messageContent}>{msg.message}</div>
                 </div>
-                <div style={styles.messageContent}>{msg.message}</div>
-              </div>
-            );
-          })
+              );
+            })
         )}
         <div ref={messagesEndRef} />
       </div>
@@ -973,7 +1054,7 @@ const StudentChat = () => {
         pauseOnHover
         limit={3}
       />
-    </div>
+    </div >
   );
 };
 
