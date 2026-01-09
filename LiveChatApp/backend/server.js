@@ -315,12 +315,11 @@ app.post("/api/admin/login", async (req, res) => {
         department: admin.department,
         mobileNumber: admin.mobileNumber,
       },
-    },
     });
   } catch (error) {
-  console.error("Admin login error:", error);
-  res.status(500).json({ error: "Login failed" });
-}
+    console.error("Admin login error:", error);
+    res.status(500).json({ error: "Login failed" });
+  }
 });
 // Register FCM token for push notifications
 app.post("/api/fcm-token", async (req, res) => {
