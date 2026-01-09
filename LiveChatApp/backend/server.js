@@ -625,516 +625,518 @@ app.post("/api/messages/:messageId/delivered", async (req, res) => {
     console.error("Error marking message delivered:", error);
     res.status(500).json({ error: "Failed to mark message as delivered" });
   }
-  // ==================== MESSAGE MANAGEMENT (Edit/Delete/Info) ====================
+});
 
-  // Delete message (For everyone)
-  app.delete("/api/messages/:messageId", async (req, res) => {
-    try {
-      const { messageId } = req.params;
-      const message = await Message.findOneAndDelete({ messageId });
+// ==================== MESSAGE MANAGEMENT (Edit/Delete/Info) ====================
 
-      if (!message) {
-        return res.status(404).json({ error: "Message not found" });
-      }
+// Delete message (For everyone)
+app.delete("/api/messages/:messageId", async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const message = await Message.findOneAndDelete({ messageId });
 
-      // Optional: Emit event to all students to remove message?
-      // io.emit("messageDeleted", { messageId });
-
-      res.json({ success: true, message: "Message deleted successfully" });
-    } catch (error) {
-      console.error("Error deleting message:", error);
-      res.status(500).json({ error: "Failed to delete message" });
+    if (!message) {
+      return res.status(404).json({ error: "Message not found" });
     }
-  });
 
-  // Edit message
-  app.put("/api/messages/:messageId", async (req, res) => {
-    try {
-      const { messageId } = req.params;
-      const { message: newText } = req.body; // Only message content can be edited
+    // Optional: Emit event to all students to remove message?
+    // io.emit("messageDeleted", { messageId });
 
-      const updatedMessage = await Message.findOneAndUpdate(
-        { messageId },
-        { message: newText },
-        { new: true }
-      );
+    res.json({ success: true, message: "Message deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting message:", error);
+    res.status(500).json({ error: "Failed to delete message" });
+  }
+});
 
-      if (!updatedMessage) {
-        return res.status(404).json({ error: "Message not found" });
-      }
+// Edit message
+app.put("/api/messages/:messageId", async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { message: newText } = req.body; // Only message content can be edited
 
-      res.json({ success: true, message: updatedMessage });
-    } catch (error) {
-      console.error("Error editing message:", error);
-      res.status(500).json({ error: "Failed to edit message" });
+    const updatedMessage = await Message.findOneAndUpdate(
+      { messageId },
+      { message: newText },
+      { new: true }
+    );
+
+    if (!updatedMessage) {
+      return res.status(404).json({ error: "Message not found" });
     }
-  });
 
-  // Get message delivery info
-  app.get("/api/messages/:messageId/info", async (req, res) => {
-    try {
-      const { messageId } = req.params;
-      const message = await Message.findOne({ messageId });
+    res.json({ success: true, message: updatedMessage });
+  } catch (error) {
+    console.error("Error editing message:", error);
+    res.status(500).json({ error: "Failed to edit message" });
+  }
+});
 
-      if (!message) {
-        return res.status(404).json({ error: "Message not found" });
-      }
+// Get message delivery info
+app.get("/api/messages/:messageId/info", async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const message = await Message.findOne({ messageId });
 
-      // Get recipient details
-      const recipientIds = message.recipients.map(r => r.studentId);
-      const students = await Student.find({ studentId: { $in: recipientIds } }).select("studentId name mobileNumber");
-
-      const recipientsWithStatus = message.recipients.map(r => {
-        const student = students.find(s => s.studentId === r.studentId);
-        return {
-          studentId: r.studentId,
-          name: student ? student.name : "Unknown",
-          mobileNumber: student ? student.mobileNumber : "Unknown",
-          delivered: r.delivered,
-          deliveredAt: r.deliveredAt,
-        };
-      });
-
-      res.json({ recipients: recipientsWithStatus });
-    } catch (error) {
-      console.error("Error fetching message info:", error);
-      res.status(500).json({ error: "Failed to fetch message info" });
+    if (!message) {
+      return res.status(404).json({ error: "Message not found" });
     }
-  });
 
-  // Update FCM token for push notifications
-  app.post("/api/student/fcm-token", async (req, res) => {
+    // Get recipient details
+    const recipientIds = message.recipients.map(r => r.studentId);
+    const students = await Student.find({ studentId: { $in: recipientIds } }).select("studentId name mobileNumber");
+
+    const recipientsWithStatus = message.recipients.map(r => {
+      const student = students.find(s => s.studentId === r.studentId);
+      return {
+        studentId: r.studentId,
+        name: student ? student.name : "Unknown",
+        mobileNumber: student ? student.mobileNumber : "Unknown",
+        delivered: r.delivered,
+        deliveredAt: r.deliveredAt,
+      };
+    });
+
+    res.json({ recipients: recipientsWithStatus });
+  } catch (error) {
+    console.error("Error fetching message info:", error);
+    res.status(500).json({ error: "Failed to fetch message info" });
+  }
+});
+
+// Update FCM token for push notifications
+app.post("/api/student/fcm-token", async (req, res) => {
+  try {
+    const { studentId, fcmToken } = req.body;
+
+    if (!studentId || !fcmToken) {
+      return res.status(400).json({ error: "Student ID and FCM token are required" });
+    }
+
+    const student = await Student.findOne({ studentId });
+    if (!student) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+
+    // Store token if not already present
+    if (!student.fcmTokens.includes(fcmToken)) {
+      student.fcmTokens.push(fcmToken);
+      await student.save();
+    }
+
+    // Subscribe token to topics
     try {
-      const { studentId, fcmToken } = req.body;
-
-      if (!studentId || !fcmToken) {
-        return res.status(400).json({ error: "Student ID and FCM token are required" });
+      await admin.messaging().subscribeToTopic([fcmToken], 'all_users');
+      if (student.branch && student.batch) {
+        const normalizedBranch = student.branch.toLowerCase().replace(/\s+/g, '_');
+        const normalizedBatch = student.batch.toLowerCase().replace(/\s+/g, '_');
+        const topic = `branch_${normalizedBranch}_batch_${normalizedBatch}`;
+        await admin.messaging().subscribeToTopic([fcmToken], topic);
       }
+    } catch (topicErr) {
+      console.warn('Topic subscription failed:', topicErr.message);
+    }
 
-      const student = await Student.findOne({ studentId });
-      if (!student) {
-        return res.status(404).json({ error: "Student not found" });
-      }
+    res.json({ success: true, tokenCount: student.fcmTokens.length });
+  } catch (error) {
+    console.error("Error updating FCM token:", error);
+    res.status(500).json({ error: "Failed to update FCM token" });
+  }
+});
 
-      // Store token if not already present
-      if (!student.fcmTokens.includes(fcmToken)) {
-        student.fcmTokens.push(fcmToken);
-        await student.save();
-      }
+// ==================== SOCKET.IO HANDLERS ====================
 
-      // Subscribe token to topics
-      try {
-        await admin.messaging().subscribeToTopic([fcmToken], 'all_users');
-        if (student.branch && student.batch) {
+io.on("connection", (socket) => {
+  console.log("User connected:", socket.id);
+
+  // Student registration
+  socket.on("registerStudent", async (data) => {
+    const { studentId } = data;
+    console.log(`🔌 Student ${studentId} connected (Socket ID: ${socket.id})`);
+
+    connectedStudents[studentId] = socket.id;
+
+    // Update student online status
+    const student = await Student.findOneAndUpdate(
+      { studentId },
+      { isOnline: true, lastSeen: new Date() },
+      { new: true }
+    );
+
+    if (student) {
+      const tokenCount = Array.isArray(student.fcmTokens) ? student.fcmTokens.length : 0;
+      console.log(`✅ Student ${studentId} is now ONLINE (has ${tokenCount} FCM token(s))`);
+
+      // Subscribe all tokens to the student's branch/batch topic
+      if (tokenCount > 0 && student.branch && student.batch) {
+        try {
           const normalizedBranch = student.branch.toLowerCase().replace(/\s+/g, '_');
           const normalizedBatch = student.batch.toLowerCase().replace(/\s+/g, '_');
           const topic = `branch_${normalizedBranch}_batch_${normalizedBatch}`;
-          await admin.messaging().subscribeToTopic([fcmToken], topic);
+          const tokens = student.fcmTokens;
+          await admin.messaging().subscribeToTopic(tokens, topic);
+          console.log(`✅ Subscribed ${studentId} (${tokens.length} token(s)) to topic: ${topic}`);
+        } catch (error) {
+          console.error(`❌ Error subscribing to topic:`, error);
         }
-      } catch (topicErr) {
-        console.warn('Topic subscription failed:', topicErr.message);
       }
-
-      res.json({ success: true, tokenCount: student.fcmTokens.length });
-    } catch (error) {
-      console.error("Error updating FCM token:", error);
-      res.status(500).json({ error: "Failed to update FCM token" });
     }
-  });
 
-  // ==================== SOCKET.IO HANDLERS ====================
-
-  io.on("connection", (socket) => {
-    console.log("User connected:", socket.id);
-
-    // Student registration
-    socket.on("registerStudent", async (data) => {
-      const { studentId } = data;
-      console.log(`🔌 Student ${studentId} connected (Socket ID: ${socket.id})`);
-
-      connectedStudents[studentId] = socket.id;
-
-      // Update student online status
-      const student = await Student.findOneAndUpdate(
-        { studentId },
-        { isOnline: true, lastSeen: new Date() },
-        { new: true }
-      );
-
-      if (student) {
-        const tokenCount = Array.isArray(student.fcmTokens) ? student.fcmTokens.length : 0;
-        console.log(`✅ Student ${studentId} is now ONLINE (has ${tokenCount} FCM token(s))`);
-
-        // Subscribe all tokens to the student's branch/batch topic
-        if (tokenCount > 0 && student.branch && student.batch) {
-          try {
-            const normalizedBranch = student.branch.toLowerCase().replace(/\s+/g, '_');
-            const normalizedBatch = student.batch.toLowerCase().replace(/\s+/g, '_');
-            const topic = `branch_${normalizedBranch}_batch_${normalizedBatch}`;
-            const tokens = student.fcmTokens;
-            await admin.messaging().subscribeToTopic(tokens, topic);
-            console.log(`✅ Subscribed ${studentId} (${tokens.length} token(s)) to topic: ${topic}`);
-          } catch (error) {
-            console.error(`❌ Error subscribing to topic:`, error);
-          }
-        }
-      }
-
-      // Notify admin about student count update
-      if (adminSocket) {
-        sendBatchInfoToAdmin();
-      }
-
-      // Don't send pending messages via socket - student will load them via API
-      // This prevents duplicate notifications when student reconnects
-      console.log(`✅ Student ${studentId} registered. Messages will be loaded via API.`);
-    });
-
-    // Admin registration
-    socket.on("registerAdmin", () => {
-      adminSocket = socket.id;
-      console.log("Admin connected");
+    // Notify admin about student count update
+    if (adminSocket) {
       sendBatchInfoToAdmin();
-    });
+    }
 
-    // Admin sends batch message
-    socket.on("sendBatchMessage", async (data) => {
-      try {
-        const { batches, branches, message, senderName, category, senderRole, senderMobile } = data;
-
-        console.log(`Admin sending message to batches: ${batches}, branches: ${branches}`);
-
-        // Find all students matching the criteria
-        const targetStudents = await Student.find({
-          batch: { $in: batches },
-          branch: { $in: branches },
-        });
-
-        if (targetStudents.length === 0) {
-          socket.emit("messageSent", {
-            success: false,
-            error: "No students found for selected batches/branches",
-          });
-          return;
-        }
-
-        // Create message in database
-        const newMessage = new Message({
-          messageId: uuidv4(),
-          sender: "admin",
-          senderName,
-          senderRole,
-          senderMobile,
-          category: category || "General",
-          message,
-          targetBatches: batches,
-          targetBranches: branches,
-          recipients: targetStudents.map(student => ({
-            studentId: student.studentId,
-            delivered: false,
-          })),
-        });
-
-        await newMessage.save();
-
-        // Send push notification only to the selected branches/batches
-        const notificationResult = await sendPushNotificationToTopic(
-          message,
-          senderName,
-          newMessage.messageId,
-          branches,
-          batches
-        );
-
-        if (!notificationResult.success) {
-          console.warn('Some notifications failed to send:', notificationResult);
-        }
-
-        // Send via socket to online students for instant in-app delivery
-        let onlineCount = 0;
-        let offlineCount = 0;
-
-        targetStudents.forEach(student => {
-          const socketId = connectedStudents[student.studentId];
-
-          if (socketId) {
-            // Send via socket for instant in-app delivery
-            io.to(socketId).emit("receiveMessage", {
-              messageId: newMessage.messageId,
-              senderName,
-              senderRole,
-              senderMobile,
-              category: category || "General",
-              message,
-              timestamp: newMessage.timestamp,
-            });
-            onlineCount++;
-          } else {
-            offlineCount++;
-          }
-        });
-
-        console.log(`Message sent to targeted topics (${branches.length * batches.length}) + ${onlineCount} online (socket), ${offlineCount} offline`);
-
-        socket.emit("messageSent", {
-          success: true,
-          totalStudents: targetStudents.length,
-          onlineCount,
-          offlineCount,
-        });
-      } catch (error) {
-        console.error("Error sending batch message:", error);
-        socket.emit("messageSent", {
-          success: false,
-          error: "Failed to send message",
-        });
-      }
-    });
-
-    // Student marks message as delivered
-    socket.on("markDelivered", async (data) => {
-      const { messageId, studentId } = data;
-
-      try {
-        const message = await Message.findOne({ messageId });
-        if (message) {
-          const recipientIndex = message.recipients.findIndex(
-            r => r.studentId === studentId
-          );
-
-          if (recipientIndex !== -1) {
-            message.recipients[recipientIndex].delivered = true;
-            message.recipients[recipientIndex].deliveredAt = new Date();
-            await message.save();
-          }
-        }
-      } catch (error) {
-        console.error("Error marking delivered:", error);
-      }
-    });
-
-    socket.on("disconnect", async () => {
-      console.log("🔌 User disconnected:", socket.id);
-
-      // Find and update student status
-      for (const studentId in connectedStudents) {
-        if (connectedStudents[studentId] === socket.id) {
-          delete connectedStudents[studentId];
-          await Student.findOneAndUpdate(
-            { studentId },
-            { isOnline: false, lastSeen: new Date() }
-          );
-          console.log(`❌ Student ${studentId} is now OFFLINE`);
-          break;
-        }
-      }
-
-      if (socket.id === adminSocket) {
-        adminSocket = null;
-        console.log("❌ Admin disconnected");
-      }
-
-      // Notify admin about student count update
-      if (adminSocket) {
-        sendBatchInfoToAdmin();
-      }
-    });
+    // Don't send pending messages via socket - student will load them via API
+    // This prevents duplicate notifications when student reconnects
+    console.log(`✅ Student ${studentId} registered. Messages will be loaded via API.`);
   });
 
-  // Helper function to send batch info to admin
-  const sendBatchInfoToAdmin = async () => {
-    if (!adminSocket) return;
+  // Admin registration
+  socket.on("registerAdmin", () => {
+    adminSocket = socket.id;
+    console.log("Admin connected");
+    sendBatchInfoToAdmin();
+  });
 
+  // Admin sends batch message
+  socket.on("sendBatchMessage", async (data) => {
     try {
-      const batches = await Student.aggregate([
-        {
-          $group: {
-            _id: { batch: "$batch", branch: "$branch" },
-            count: { $sum: 1 },
-            onlineCount: {
-              $sum: { $cond: ["$isOnline", 1, 0] },
-            },
-          },
-        },
-        {
-          $project: {
-            _id: 0,
-            batch: "$_id.batch",
-            branch: "$_id.branch",
-            studentCount: "$count",
-            onlineCount: "$onlineCount",
-          },
-        },
-        { $sort: { batch: -1, branch: 1 } },
-      ]);
+      const { batches, branches, message, senderName, category, senderRole, senderMobile } = data;
 
-      io.to(adminSocket).emit("batchInfo", batches);
-    } catch (error) {
-      console.error("Error sending batch info:", error);
-    }
-  };
+      console.log(`Admin sending message to batches: ${batches}, branches: ${branches}`);
 
-  // Helper function to send push notification to specific branch/batch topics
-  const sendPushNotificationToTopic = async (messageText, senderName, messageId = '', branches = [], batches = []) => {
-    try {
-      // If no branches or batches specified, don't send any notification
-      if (branches.length === 0 || batches.length === 0) {
-        console.log('Both branches and batches are required for notification');
-        return { success: false, error: 'Both branches and batches required' };
-      }
-
-      // Create combined topics: branch_startYear_endYear (e.g., cse_2023_2027)
-      const topics = [];
-      branches.forEach(branch => {
-        batches.forEach(batch => {
-          const combinedTopic = `${branch.toLowerCase()}_${batch.replace('-', '_')}`;
-          topics.push(combinedTopic);
-        });
+      // Find all students matching the criteria
+      const targetStudents = await Student.find({
+        batch: { $in: batches },
+        branch: { $in: branches },
       });
 
-      console.log(`📤 Sending push notification to combined topics:`, topics);
+      if (targetStudents.length === 0) {
+        socket.emit("messageSent", {
+          success: false,
+          error: "No students found for selected batches/branches",
+        });
+        return;
+      }
 
-      // Create the base message
-      const message = {
-        data: {
-          title: `New Notice from ${senderName}`,
-          body: messageText.substring(0, 150),
-          messageId: messageId || '',
-          badge: '',
-          image: '',
-          timestamp: new Date().toISOString(),
-          targetBranches: JSON.stringify(branches),
-          targetBatches: JSON.stringify(batches),
-          channel_id: 'noticeb_notification_channel',
-          priority: 'high',
+      // Create message in database
+      const newMessage = new Message({
+        messageId: uuidv4(),
+        sender: "admin",
+        senderName,
+        senderRole,
+        senderMobile,
+        category: category || "General",
+        message,
+        targetBatches: batches,
+        targetBranches: branches,
+        recipients: targetStudents.map(student => ({
+          studentId: student.studentId,
+          delivered: false,
+        })),
+      });
+
+      await newMessage.save();
+
+      // Send push notification only to the selected branches/batches
+      const notificationResult = await sendPushNotificationToTopic(
+        message,
+        senderName,
+        newMessage.messageId,
+        branches,
+        batches
+      );
+
+      if (!notificationResult.success) {
+        console.warn('Some notifications failed to send:', notificationResult);
+      }
+
+      // Send via socket to online students for instant in-app delivery
+      let onlineCount = 0;
+      let offlineCount = 0;
+
+      targetStudents.forEach(student => {
+        const socketId = connectedStudents[student.studentId];
+
+        if (socketId) {
+          // Send via socket for instant in-app delivery
+          io.to(socketId).emit("receiveMessage", {
+            messageId: newMessage.messageId,
+            senderName,
+            senderRole,
+            senderMobile,
+            category: category || "General",
+            message,
+            timestamp: newMessage.timestamp,
+          });
+          onlineCount++;
+        } else {
+          offlineCount++;
+        }
+      });
+
+      console.log(`Message sent to targeted topics (${branches.length * batches.length}) + ${onlineCount} online (socket), ${offlineCount} offline`);
+
+      socket.emit("messageSent", {
+        success: true,
+        totalStudents: targetStudents.length,
+        onlineCount,
+        offlineCount,
+      });
+    } catch (error) {
+      console.error("Error sending batch message:", error);
+      socket.emit("messageSent", {
+        success: false,
+        error: "Failed to send message",
+      });
+    }
+  });
+
+  // Student marks message as delivered
+  socket.on("markDelivered", async (data) => {
+    const { messageId, studentId } = data;
+
+    try {
+      const message = await Message.findOne({ messageId });
+      if (message) {
+        const recipientIndex = message.recipients.findIndex(
+          r => r.studentId === studentId
+        );
+
+        if (recipientIndex !== -1) {
+          message.recipients[recipientIndex].delivered = true;
+          message.recipients[recipientIndex].deliveredAt = new Date();
+          await message.save();
+        }
+      }
+    } catch (error) {
+      console.error("Error marking delivered:", error);
+    }
+  });
+
+  socket.on("disconnect", async () => {
+    console.log("🔌 User disconnected:", socket.id);
+
+    // Find and update student status
+    for (const studentId in connectedStudents) {
+      if (connectedStudents[studentId] === socket.id) {
+        delete connectedStudents[studentId];
+        await Student.findOneAndUpdate(
+          { studentId },
+          { isOnline: false, lastSeen: new Date() }
+        );
+        console.log(`❌ Student ${studentId} is now OFFLINE`);
+        break;
+      }
+    }
+
+    if (socket.id === adminSocket) {
+      adminSocket = null;
+      console.log("❌ Admin disconnected");
+    }
+
+    // Notify admin about student count update
+    if (adminSocket) {
+      sendBatchInfoToAdmin();
+    }
+  });
+});
+
+// Helper function to send batch info to admin
+const sendBatchInfoToAdmin = async () => {
+  if (!adminSocket) return;
+
+  try {
+    const batches = await Student.aggregate([
+      {
+        $group: {
+          _id: { batch: "$batch", branch: "$branch" },
+          count: { $sum: 1 },
+          onlineCount: {
+            $sum: { $cond: ["$isOnline", 1, 0] },
+          },
         },
-        android: {
-          priority: 'high',
-          ttl: 86400000, // 24 hours in milliseconds
-          notification: {
-            channelId: 'noticeb_notification_channel',
+      },
+      {
+        $project: {
+          _id: 0,
+          batch: "$_id.batch",
+          branch: "$_id.branch",
+          studentCount: "$count",
+          onlineCount: "$onlineCount",
+        },
+      },
+      { $sort: { batch: -1, branch: 1 } },
+    ]);
+
+    io.to(adminSocket).emit("batchInfo", batches);
+  } catch (error) {
+    console.error("Error sending batch info:", error);
+  }
+};
+
+// Helper function to send push notification to specific branch/batch topics
+const sendPushNotificationToTopic = async (messageText, senderName, messageId = '', branches = [], batches = []) => {
+  try {
+    // If no branches or batches specified, don't send any notification
+    if (branches.length === 0 || batches.length === 0) {
+      console.log('Both branches and batches are required for notification');
+      return { success: false, error: 'Both branches and batches required' };
+    }
+
+    // Create combined topics: branch_startYear_endYear (e.g., cse_2023_2027)
+    const topics = [];
+    branches.forEach(branch => {
+      batches.forEach(batch => {
+        const combinedTopic = `${branch.toLowerCase()}_${batch.replace('-', '_')}`;
+        topics.push(combinedTopic);
+      });
+    });
+
+    console.log(`📤 Sending push notification to combined topics:`, topics);
+
+    // Create the base message
+    const message = {
+      data: {
+        title: `New Notice from ${senderName}`,
+        body: messageText.substring(0, 150),
+        messageId: messageId || '',
+        badge: '',
+        image: '',
+        timestamp: new Date().toISOString(),
+        targetBranches: JSON.stringify(branches),
+        targetBatches: JSON.stringify(batches),
+        channel_id: 'noticeb_notification_channel',
+        priority: 'high',
+      },
+      android: {
+        priority: 'high',
+        ttl: 86400000, // 24 hours in milliseconds
+        notification: {
+          channelId: 'noticeb_notification_channel',
+          sound: 'default',
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            'content-available': 1,
             sound: 'default',
           },
         },
-        apns: {
-          payload: {
-            aps: {
-              'content-available': 1,
+      },
+      // Will be set per topic
+    };
+
+    // Send to each topic
+    const results = [];
+    for (const topic of topics) {
+      try {
+        const message = {
+          notification: {
+            title: `New Notice from ${senderName}`,
+            body: messageText.substring(0, 150),
+          },
+          data: {
+            title: `New Notice from ${senderName}`,
+            body: messageText.substring(0, 150),
+            messageId: messageId || '',
+            timestamp: new Date().toISOString(),
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+            sound: 'default',
+          },
+          android: {
+            priority: 'high',
+            ttl: 86400000, // 24 hours
+            notification: {
+              channelId: 'noticeb_notification_channel',
               sound: 'default',
             },
           },
-        },
-        // Will be set per topic
-      };
-
-      // Send to each topic
-      const results = [];
-      for (const topic of topics) {
-        try {
-          const message = {
-            notification: {
-              title: `New Notice from ${senderName}`,
-              body: messageText.substring(0, 150),
-            },
-            data: {
-              title: `New Notice from ${senderName}`,
-              body: messageText.substring(0, 150),
-              messageId: messageId || '',
-              timestamp: new Date().toISOString(),
-              click_action: 'FLUTTER_NOTIFICATION_CLICK',
-              sound: 'default',
-            },
-            android: {
-              priority: 'high',
-              ttl: 86400000, // 24 hours
-              notification: {
-                channelId: 'noticeb_notification_channel',
+          apns: {
+            payload: {
+              aps: {
+                'content-available': 1,
                 sound: 'default',
               },
             },
-            apns: {
-              payload: {
-                aps: {
-                  'content-available': 1,
-                  sound: 'default',
-                },
-              },
-            },
-            topic: topic
-          };
+          },
+          topic: topic
+        };
 
-          const response = await admin.messaging().send(message);
-          console.log(`✅ Notification sent to topic ${topic}`, response);
-          results.push({ topic, success: true, response });
-        } catch (error) {
-          console.error(`❌ Failed to send to topic ${topic}:`, error.message, error.stack);
-          results.push({ topic, success: false, error: error.message });
+        const response = await admin.messaging().send(message);
+        console.log(`✅ Notification sent to topic ${topic}`, response);
+        results.push({ topic, success: true, response });
+      } catch (error) {
+        console.error(`❌ Failed to send to topic ${topic}:`, error.message, error.stack);
+        results.push({ topic, success: false, error: error.message });
+      }
+    }
+
+    const successCount = results.filter(r => r.success).length;
+    console.log(`📊 Notification summary: ${successCount}/${topics.length} topics successful`);
+
+    return {
+      success: successCount > 0,
+      results,
+      totalTopics: topics.length,
+      successfulTopics: successCount
+    };
+  } catch (error) {
+    console.error(`❌ Error in sendPushNotificationToTopic:`, error.message);
+    return { success: false, error: error.message };
+  }
+};
+
+// Helper function for push notifications
+const sendPushNotificationToStudent = async (student, messageText, messageId = '') => {
+  if (!student.fcmTokens || student.fcmTokens.length === 0) {
+    console.log(`No FCM tokens for student ${student.studentId}`);
+    return;
+  }
+
+  try {
+    // Count unread messages for this student (messages where delivered is false)
+    const unreadCount = await Message.countDocuments({
+      recipients: {
+        $elemMatch: {
+          studentId: student.studentId,
+          delivered: false
         }
       }
+    });
 
-      const successCount = results.filter(r => r.success).length;
-      console.log(`📊 Notification summary: ${successCount}/${topics.length} topics successful`);
+    console.log(`📤 Sending push notification to ${student.studentId} (${student.fcmTokens.length} devices, ${unreadCount} unread)`);
 
-      return {
-        success: successCount > 0,
-        results,
-        totalTopics: topics.length,
-        successfulTopics: successCount
-      };
-    } catch (error) {
-      console.error(`❌ Error in sendPushNotificationToTopic:`, error.message);
-      return { success: false, error: error.message };
-    }
-  };
+    // Send notification to all registered devices
+    const notificationPromises = student.fcmTokens.map(async (fcmToken) => {
+      try {
+        const result = await sendPushNotification(
+          fcmToken,
+          'New message from HOD',
+          messageText.substring(0, 100),
+          {
+            messageId: messageId,
+            type: 'batch_message',
+          },
+          unreadCount || 1  // Badge count (minimum 1 for new message)
+        );
 
-  // Helper function for push notifications
-  const sendPushNotificationToStudent = async (student, messageText, messageId = '') => {
-    if (!student.fcmTokens || student.fcmTokens.length === 0) {
-      console.log(`No FCM tokens for student ${student.studentId}`);
-      return;
-    }
-
-    try {
-      // Count unread messages for this student (messages where delivered is false)
-      const unreadCount = await Message.countDocuments({
-        recipients: {
-          $elemMatch: {
-            studentId: student.studentId,
-            delivered: false
-          }
+        if (result.success) {
+          console.log(`✅ Notification sent to ${student.studentId} (token: ${fcmToken.substring(0, 20)}...)`);
+        } else {
+          console.log(`❌ Failed to send notification to ${student.studentId} (token: ${fcmToken.substring(0, 20)}...):`, result.error);
         }
-      });
+        return result;
+      } catch (error) {
+        console.error(`❌ Error sending to token ${fcmToken.substring(0, 20)}...:`, error.message);
+        return { success: false, error: error.message };
+      }
+    });
 
-      console.log(`📤 Sending push notification to ${student.studentId} (${student.fcmTokens.length} devices, ${unreadCount} unread)`);
-
-      // Send notification to all registered devices
-      const notificationPromises = student.fcmTokens.map(async (fcmToken) => {
-        try {
-          const result = await sendPushNotification(
-            fcmToken,
-            'New message from HOD',
-            messageText.substring(0, 100),
-            {
-              messageId: messageId,
-              type: 'batch_message',
-            },
-            unreadCount || 1  // Badge count (minimum 1 for new message)
-          );
-
-          if (result.success) {
-            console.log(`✅ Notification sent to ${student.studentId} (token: ${fcmToken.substring(0, 20)}...)`);
-          } else {
-            console.log(`❌ Failed to send notification to ${student.studentId} (token: ${fcmToken.substring(0, 20)}...):`, result.error);
-          }
-          return result;
-        } catch (error) {
-          console.error(`❌ Error sending to token ${fcmToken.substring(0, 20)}...:`, error.message);
-          return { success: false, error: error.message };
-        }
-      });
-
-      await Promise.all(notificationPromises);
-    } catch (error) {
-      console.error(`❌ Error sending notification to ${student.studentId}:`, error.message);
-    }
-  };
+    await Promise.all(notificationPromises);
+  } catch (error) {
+    console.error(`❌ Error sending notification to ${student.studentId}:`, error.message);
+  }
+};
