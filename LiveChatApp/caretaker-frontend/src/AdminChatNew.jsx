@@ -12,28 +12,28 @@ const AdminChat = () => {
   const [adminId, setAdminId] = useState("");
   const [password, setPassword] = useState("");
   const [admin, setAdmin] = useState(null);
-  
+
   // Filters and data
   const [batches, setBatches] = useState([]);
   const [branches, setBranches] = useState([]);
   const [sections, setSections] = useState([]);
   const [students, setStudents] = useState([]);
-  
+
   // Selection state
   const [selectedBatches, setSelectedBatches] = useState([]);
   const [selectedBranches, setSelectedBranches] = useState([]);
   const [selectedSection, setSelectedSection] = useState("");
-  
+
   // Message state
   const [message, setMessage] = useState("");
   const [uploadFile, setUploadFile] = useState(null);
   const [showStudentList, setShowStudentList] = useState(true);
-  
+
   useEffect(() => {
     // Check if admin is already logged in
     const token = localStorage.getItem("adminToken");
     const savedAdmin = localStorage.getItem("admin");
-    
+
     if (token && savedAdmin) {
       setAdmin(JSON.parse(savedAdmin));
       setCurrentView("chat");
@@ -71,7 +71,7 @@ const AdminChat = () => {
         axios.get(`${API_URL}/api/batches`),
         axios.get(`${API_URL}/api/branches`),
       ]);
-      
+
       setBatches(batchesRes.data);
       setBranches(branchesRes.data);
     } catch (error) {
@@ -213,7 +213,7 @@ const AdminChat = () => {
     return (
       <div style={styles.container}>
         <div style={styles.formCard}>
-          <h2 style={styles.title}>👨‍💼 HOD Login</h2>
+          <h2 style={styles.title}>👨‍💼 Login</h2>
           <p style={styles.subtitle}>College Batch Messaging System</p>
 
           <input

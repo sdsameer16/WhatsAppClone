@@ -118,6 +118,9 @@ const StudentChat = () => {
   const [gameScore, setGameScore] = useState(0);
   const [gameItems, setGameItems] = useState([]); // { id, x, y, type, speed }
 
+  // Water Effect State
+  const [showWater, setShowWater] = useState(false);
+
   // New State for Category, Tabs and Message Info
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [senderInfoModal, setSenderInfoModal] = useState(null); // { name, role, mobile }
@@ -144,10 +147,8 @@ const StudentChat = () => {
   const getInitialSeason = () => {
     const month = new Date().getMonth();
     // June(5) - Sept(8): Rainy
-    // Oct(9) - Jan(0): Winter
     // Feb(1) - May(4): Summer
     if (month >= 5 && month <= 8) return "rainy";
-    if (month >= 9 || month === 0) return "winter";
     return "summer";
   };
 
@@ -180,7 +181,7 @@ const StudentChat = () => {
             id: Date.now(),
             x: Math.random() * (window.innerWidth - 50),
             y: -50,
-            type: theme === "winter" ? "❄️" : theme === "rainy" ? "💧" : "☀️",
+            type: theme === "rainy" ? "💧" : "☀️",
             speed: Math.random() * 2 + 2
           }
         ]);
@@ -193,21 +194,37 @@ const StudentChat = () => {
         );
       };
 
-      gameLoop = setInterval(() => {
+      gameLoopInterval = setInterval(() => {
         updateItems();
       }, 30);
 
-      const spawner = setInterval(spawnItem, spawnRate);
+      spawnerInterval = setInterval(spawnItem, spawnRate);
 
       return () => {
-        clearInterval(gameLoop);
-        clearInterval(spawner);
+        clearInterval(gameLoopInterval);
+        clearInterval(spawnerInterval);
       };
     } else {
       setGameItems([]);
       setGameScore(0);
     }
   }, [gameActive, theme]);
+
+  // Water Effect Timer
+  useEffect(() => {
+    let effectTimer;
+
+    // Reset effects first
+    setShowWater(false);
+
+    if (theme === "rainy") {
+      effectTimer = setTimeout(() => {
+        setShowWater(true);
+      }, 5000); // Start rising after 5 seconds
+    }
+
+    return () => clearTimeout(effectTimer);
+  }, [theme]);
 
   const handleGameItemClick = (id) => {
     setGameScore(prev => prev + 10);
@@ -771,12 +788,13 @@ const StudentChat = () => {
     const icon = theme === "winter" ? "❄️" : theme === "rainy" ? "💧" : "☀️";
 
     for (let i = 0; i < count; i++) {
+      const isRain = theme === "rainy";
       const style = {
-        left: `${Math.random() * 100}vw`,
-        animationDuration: `${Math.random() * 5 + 5}s`,
-        animationDelay: `${Math.random() * 5}s`,
-        opacity: Math.random() * 0.5 + 0.2,
-        fontSize: `${Math.random() * 20 + 10}px`
+        left: isRain ? `${Math.random() * 150 - 20}vw` : `${Math.random() * 100}vw`, // Rain needs wider start area for diagonal fall
+        animationDuration: isRain ? `${Math.random() * 2 + 1.5}s` : `${Math.random() * 5 + 5}s`, // Slower rain (1.5s - 3.5s)
+        animationDelay: `${Math.random() * 2}s`,
+        opacity: Math.random() * 0.5 + 0.3,
+        fontSize: isRain ? `${Math.random() * 10 + 15}px` : `${Math.random() * 20 + 10}px`
       };
       elements.push(
         <div key={i} className={`falling-item ${theme}-item`} style={style}>
@@ -796,8 +814,22 @@ const StudentChat = () => {
           100% { transform: translateY(100vh) rotate(360deg); }
         }
         @keyframes rainFall {
-          0% { transform: translate(10vw, -10vh) rotate(45deg); }
-          100% { transform: translate(-20vw, 100vh) rotate(45deg); }
+          0% {
+            transform: translate(0, -10vh) rotate(15deg);
+            opacity: 0.8;
+          }
+          85% {
+            transform: translate(-20vw, 90vh) rotate(15deg);
+            opacity: 0.8;
+          }
+          95% {
+             transform: translate(-22vw, 95vh) rotate(0deg) scale(1, 0.5);
+             opacity: 0.6;
+          }
+          100% {
+            transform: translate(-22vw, 95vh) rotate(0deg) scale(2, 0.1);
+            opacity: 0;
+          }
         }
         .falling-item {
           position: absolute;
@@ -811,6 +843,7 @@ const StudentChat = () => {
         }
         .falling-item.rainy-item {
           animation-name: rainFall;
+          transform-origin: bottom center;
         }
         .background-effects {
             position: absolute;
@@ -821,9 +854,63 @@ const StudentChat = () => {
             overflow: hidden;
             pointer-events: none;
         }
+
+        /* Water Layer */
+        .water-layer {
+          position: fixed;
+          bottom: 0;
+          left: 0;
+          width: 100%;
+          height: 8vh; /* Max height lowered to 8% */
+          background: linear-gradient(to top, rgba(0, 100, 255, 0.6), rgba(0, 150, 255, 0.3));
+          z-index: 5;
+          animation: riseWater 5s ease-out forwards, tide 4s infinite ease-in-out alternate;
+          clip-path: polygon(
+            0% 20%, 5% 15%, 10% 20%, 15% 25%, 20% 20%, 25% 15%, 30% 20%, 35% 25%,
+            40% 20%, 45% 15%, 50% 20%, 55% 25%, 60% 20%, 65% 15%, 70% 20%, 75% 25%,
+            80% 20%, 85% 15%, 90% 20%, 95% 25%, 100% 20%, 100% 100%, 0% 100%
+          );
+        }
+
+        @keyframes riseWater {
+          from { height: 0; opacity: 0; }
+          to { height: 8vh; opacity: 1; }
+        }
+
+        @keyframes tide {
+          0% { transform: translateY(0) scaleY(1); }
+          100% { transform: translateY(5px) scaleY(1.05); }
+        }
+
+        /* Paper Boat */
+        .paper-boat {
+          position: absolute;
+          bottom: 4vh; /* Sit on top of water approx */
+          font-size: 40px;
+          z-index: 6;
+          animation: boatFloat 25s linear infinite, boatBob 2s ease-in-out infinite;
+        }
+
+        @keyframes boatFloat {
+          0% { left: -10%; }
+          100% { left: 110%; }
+        }
+
+        @keyframes boatBob {
+          0%, 100% { transform: rotate(0deg) translateY(0); }
+          50% { transform: rotate(5deg) translateY(-5px); }
+        }
       `}</style>
 
       {renderBackgroundEffects()}
+
+      {/* Water & Boat Effect */}
+      {showWater && theme === "rainy" && (
+        <>
+          <div className="water-layer"></div>
+          <div className="paper-boat">⛵</div>
+        </>
+      )}
 
       {/* Mini Game Overlay */}
       {gameActive && (
@@ -1069,7 +1156,7 @@ const getThemeStyles = (theme) => {
     case 'rainy':
       return { background: 'linear-gradient(to bottom, #3a3b3c, #808080)' }; // Dark Gray
     default:
-      return {};
+      return { background: '#f5f5f5' };
   }
 };
 
