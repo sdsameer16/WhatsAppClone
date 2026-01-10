@@ -147,8 +147,10 @@ const StudentChat = () => {
   const getInitialSeason = () => {
     const month = new Date().getMonth();
     // June(5) - Sept(8): Rainy
+    // Oct(9) - Jan(0): Winter
     // Feb(1) - May(4): Summer
     if (month >= 5 && month <= 8) return "rainy";
+    if (month >= 9 || month === 0) return "winter";
     return "summer";
   };
 
